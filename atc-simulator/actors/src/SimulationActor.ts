@@ -14,7 +14,7 @@ import type {
     SimulationState,
     WorkerLease,
 } from "@ghost-tower/domain/contracts"
-import * as sim from "./simulation.ts"
+import * as sim from "./simulation.js"
 
 // The stable registry: SimulationActor.get("ghost-tower"). One persisted root aggregate holds
 // every run (reset adds a run, never deletes one). All transitions are pure functions in

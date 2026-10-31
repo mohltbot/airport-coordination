@@ -1,5 +1,5 @@
 // Public actor exports for `terse actor dev` and `terse actor generate`.
-export { SimulationActor } from "./SimulationActor.ts"
-export { AirportActor } from "./AirportActor.ts"
-export { FlightActor } from "./FlightActor.ts"
-export { Probe } from "./Probe.ts"
+export { SimulationActor } from "./SimulationActor.js"
+export { AirportActor } from "./AirportActor.js"
+export { FlightActor } from "./FlightActor.js"
+export { Probe } from "./Probe.js"

@@ -14,7 +14,7 @@ import type {
     PilotDecision,
     Priority,
     RunwayId,
-} from "./contracts.ts"
+} from "./contracts.js"
 
 export type PilotOfferView = {
     offerId: string

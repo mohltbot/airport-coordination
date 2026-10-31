@@ -8,7 +8,7 @@ import {
     SLOT_GRID_SEC,
     SLOT_MIN_LEAD_SEC,
     SLOT_SEARCH_HORIZON_SEC,
-} from "./constants.ts"
+} from "./constants.js"
 import type {
     AirportState,
     DomainCode,
@@ -17,8 +17,8 @@ import type {
     Point,
     Priority,
     RunwayId,
-} from "./contracts.ts"
-import { distanceNm, travelSeconds } from "./geometry.ts"
+} from "./contracts.js"
+import { distanceNm, travelSeconds } from "./geometry.js"
 
 export type Interval = { start: number; end: number }
 

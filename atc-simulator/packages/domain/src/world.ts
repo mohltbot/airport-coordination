@@ -8,7 +8,7 @@ import {
     RUNWAY_OCCUPANCY_SEC,
     SPAWN_DISTANCE_MIN_NM,
     SPAWN_DISTANCE_RANGE_NM,
-} from "./constants.ts"
+} from "./constants.js"
 import {
     RunConfigSchema,
     airportEntityId,
@@ -18,8 +18,8 @@ import {
     type FlightState,
     type InitialWorld,
     type RunConfig,
-} from "./contracts.ts"
-import { headingDeg, polarOffset } from "./geometry.ts"
+} from "./contracts.js"
+import { headingDeg, polarOffset } from "./geometry.js"
 
 export function mulberry32(seed: number): () => number {
     let a = seed >>> 0

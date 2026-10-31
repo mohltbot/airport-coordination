@@ -1,6 +1,6 @@
 // Shared entity transitions for AirportActor and FlightActor (module-level; see durability.ts).
 import type { DomainResult, MutationContext, ReceivedEnvelope, Tick } from "@ghost-tower/domain/contracts"
-import { applied, checkFence, rejected } from "./durability.ts"
+import { applied, checkFence, rejected } from "./durability.js"
 
 type EntityLike = {
     runId: string

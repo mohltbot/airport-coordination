@@ -11,7 +11,7 @@ import {
     NO_FEASIBLE_RETRY_MS,
     minSlotLeadSimSec,
     type RelayTiming,
-} from "./constants.ts"
+} from "./constants.js"
 import {
     entityHandle,
     flightEntityId,
@@ -46,8 +46,8 @@ import {
     type TouchdownInput,
     type TouchdownReceipt,
     type Transition,
-} from "./contracts.ts"
-import { distanceNm, travelSeconds } from "./geometry.ts"
+} from "./contracts.js"
+import { distanceNm, travelSeconds } from "./geometry.js"
 import {
     chooseAtcAction,
     choosePilotAction,
@@ -56,7 +56,7 @@ import {
     type AtcView,
     type PilotOfferView,
     type PilotView,
-} from "./policy.ts"
+} from "./policy.js"
 import {
     arrivalWindow,
     findLandingOffer,
@@ -65,7 +65,7 @@ import {
     offerIdFor,
     slotFeasibility,
     type Commitment,
-} from "./scheduling.ts"
+} from "./scheduling.js"
 
 // ---------------------------------------------------------------- context
 

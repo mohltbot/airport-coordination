@@ -28,9 +28,9 @@ import {
     type ReceivedEnvelope,
     type RunEvent,
     type SimulationState,
-} from "./contracts.ts"
-import { COMMAND_DELAYED_AFTER_MS, COMMAND_EXPIRY_MS } from "./constants.ts"
-import { stableHashHex, stableStringify, stableUuid } from "./stable-id.ts"
+} from "./contracts.js"
+import { COMMAND_DELAYED_AFTER_MS, COMMAND_EXPIRY_MS } from "./constants.js"
+import { stableHashHex, stableStringify, stableUuid } from "./stable-id.js"
 
 /** nextAttemptAtWallMs for a command waiting behind an unresolved predecessor. */
 export const PARKED_AT_WALL_MS = Number.MAX_SAFE_INTEGER

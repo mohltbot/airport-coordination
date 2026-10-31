@@ -1,6 +1,6 @@
 // Planar geometry in nautical miles. Map x grows east, y grows south.
 // Heading is degrees clockwise from north (0 up, 90 right).
-import type { Point } from "./contracts.ts"
+import type { Point } from "./contracts.js"
 
 export function distanceNm(a: Point, b: Point): number {
     return Math.hypot(b.x - a.x, b.y - a.y)

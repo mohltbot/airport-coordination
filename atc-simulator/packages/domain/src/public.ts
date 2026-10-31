@@ -14,7 +14,7 @@ export {
     RunConfigSchema,
     RunDescriptorSchema,
     TimelineEventSchema,
-} from "./contracts.ts"
+} from "./contracts.js"
 export type {
     AgentMode,
     ApiError,
@@ -36,4 +36,4 @@ export type {
     RunDescriptor,
     RunPhase,
     TimelineEvent,
-} from "./contracts.ts"
+} from "./contracts.js"

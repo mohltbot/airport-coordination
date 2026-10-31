@@ -5,8 +5,8 @@
 import type { AirportState, DomainResult, FlightState, MutationContext, ReceivedEnvelope } from "@ghost-tower/domain/contracts"
 import { RELAY_TIMING } from "@ghost-tower/domain/constants"
 import { isControllerCommand, receiveControllerCommand, type IncidentContext } from "@ghost-tower/domain/incidents"
-import { negotiationTiming, openRound, revokeArrangements, type NegotiationContext } from "../../packages/domain/src/negotiation.ts"
-import { checkFence, rejected } from "./durability.ts"
+import { negotiationTiming, openRound, revokeArrangements, type NegotiationContext } from "../../packages/domain/src/negotiation.js"
+import { checkFence, rejected } from "./durability.js"
 
 /** Bind the negotiation transitions incidents.ts calls back into: revoked holds
  *  answer their pending request with LANDING_REFUSED, and a flight that becomes

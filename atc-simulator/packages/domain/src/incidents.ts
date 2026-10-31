@@ -35,7 +35,7 @@ import {
     type ReceivedEnvelope,
     type RunwayId,
     type Transition,
-} from "./contracts.ts"
+} from "./contracts.js"
 import {
     CRUISE_SPEED_KNOTS,
     ENGINE_TROUBLE_DEADLINE_SEC,
@@ -46,8 +46,8 @@ import {
     RUNWAY_IDS,
     RUNWAY_OCCUPANCY_SEC,
     SMOKE_DEADLINE_SEC,
-} from "./constants.ts"
-import { stableUuid } from "./stable-id.ts"
+} from "./constants.js"
+import { stableUuid } from "./stable-id.js"
 
 // ---------------------------------------------------------------- types
 

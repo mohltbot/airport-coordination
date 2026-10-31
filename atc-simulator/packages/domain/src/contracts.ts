@@ -10,7 +10,7 @@ import {
     MAX_REASON_CHARS,
     RUNWAY_IDS,
     SEED_MAX,
-} from "./constants.ts"
+} from "./constants.js"
 
 // ---------------------------------------------------------------- primitives
 
