@@ -19,7 +19,7 @@ if (!KEY || !CHANNEL || !ROOM) throw new Error("Missing Relay settings. Run: bun
 
 const room = () => actors.Room.get(ROOM)
 
-async function ingest(payload: any, via: "poll" | "push") {
+async function ingest(payload: any, via: "poll" | "push" | "send") {
     // Event feed shape: { channel: "<name>", message: { id, agent_name, text, metadata } }.
     // The `data` we post comes back as `metadata`.
     const m = payload?.message ?? payload
@@ -71,6 +71,7 @@ poll()
 
 // Push path, for a Relay subscription through the tunnel. Verified against the raw body.
 const seenDeliveries = new Set<string>()
+let loggedPush = false
 function signatureOk(raw: string, header: string | null) {
     if (!SECRET) return true
     if (!header?.startsWith("sha256=")) return false
@@ -109,7 +110,11 @@ Bun.serve({
                     },
                     body: JSON.stringify({ text, data: { sentAt: Date.now() } }),
                 })
-                return json(await res.json(), res.status)
+                const out: any = await res.json()
+                // Relay's event feed lags 3 to 7 s (push lags 6 s or more). Once Relay has accepted the
+                // message and given it an id, record it right away; the poller later skips it as a duplicate.
+                if (res.ok && out?.data?.id) await ingest({ channel: CHANNEL, message: out.data }, "send")
+                return json(out, res.status)
             }
 
             if (req.method === "POST" && url.pathname === "/alarm") {
@@ -123,7 +128,13 @@ Bun.serve({
                 const id = req.headers.get("webhook-id")
                 if (id && seenDeliveries.has(id)) return json({ ok: true, duplicate: true })
                 if (id) seenDeliveries.add(id)
-                await ingest(JSON.parse(raw), "push")
+                if (!loggedPush) {
+                    console.log("first push delivery:", raw.slice(0, 1200))
+                    loggedPush = true
+                }
+                // Subscription deliveries wrap the message: { type, workspace_id, timestamp, data: { id, channel_name, metadata, ... } }.
+                const body = JSON.parse(raw)
+                await ingest(body.data ?? body, "push")
                 return json({ ok: true })
             }
 
