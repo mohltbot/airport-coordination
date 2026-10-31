@@ -22,6 +22,7 @@ import {
     buildDecisionInput,
     commitPilotDecision,
     flightWallTimers,
+    isTerminalFlight,
     negotiationTiming,
     nextFlightWallDeadline,
     openRound,
@@ -74,7 +75,16 @@ export function advanceFlightStep(settings: object, current: FlightState | null,
     if (t.result.outcome !== "APPLIED") return { state: t.state, result: t.result }
     const timers = flightWallTimers(t.state, nctx)
     const next = timers.result.outcome === "APPLIED" ? timers.state : t.state
-    return { state: immediateClearance(next, nctx), result: t.result }
+    return { state: immediateClearance(initialRound(next, nctx), nctx), result: t.result }
+}
+
+// Design §6 step 2: normal traffic opens its INITIAL round (original airport first) on its
+// first running tick. Nothing else fires the INITIAL trigger, so without this no flight
+// ever requested a landing. negotiationCounter > 0 means a round was already opened.
+function initialRound(flight: FlightState, nctx: NegotiationContext): FlightState {
+    if (flight.negotiationCounter > 0 || flight.negotiation || flight.activeAssignment || flight.pendingAcceptance || isTerminalFlight(flight)) return flight
+    const opened = openRound(flight, "INITIAL", nctx)
+    return opened.result.outcome === "APPLIED" ? opened.state : flight
 }
 
 // IMMEDIATE mode (no pilot agent): send the clearance request as soon as flight.ts
