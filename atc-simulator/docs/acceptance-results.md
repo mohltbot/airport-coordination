@@ -1,6 +1,6 @@
 # Acceptance results
 
-Integration runs on 2026-10-31, 12:32 to 13:53 PT, on the build laptop (macOS arm64). Bun 1.4.4, Terse 0.14.9 local runtime on 127.0.0.1:7100, seed 20261031, speed 5x. Relay was hosted Agent Relay (cast.agentrelay.com, dedicated simulator workspace) until 13:30, then Agent Relay's local engine (`@relaycast/engine@12.3.0` on 127.0.0.1:8787, approved by Agent Relay for the demo) with the LOCAL timing profile.
+Integration runs on 2026-10-31, 12:32 to 14:01 PT, on the build laptop (macOS arm64). Bun 1.4.4, Terse 0.14.9 local runtime on 127.0.0.1:7100, seed 20261031, speed 5x. Relay was hosted Agent Relay (cast.agentrelay.com, dedicated simulator workspace) until 13:30, then Agent Relay's local engine (`@relaycast/engine@12.3.0` on 127.0.0.1:8787, approved by Agent Relay for the demo) with the LOCAL timing profile.
 
 Every run used the real path: the API gateway on :3000 in actor mode, the SimulationActor command ledger, the worker's Relay outbox, Relay, then the target AirportActor or FlightActor. No fixture data and no in-memory stand-in for Terse or Relay.
 
@@ -29,8 +29,9 @@ Command latencies run from the HTTP 202 to the state change in the public snapsh
 | Actor runtime restart mid-run | PASS | 29 s outage; sim time, tick and every flight's revision, position, fuel and assignment identical afterwards; no catch-up jump |
 | Health is truthful | PASS | Actors UNAVAILABLE during the runtime outage; relay DEGRADED with failure counts on hosted; READY "Agent Relay (local engine)" after the switch |
 | 10 flights on hosted Relay | FAIL | Hosted Relay saturated: 429 workspace_busy, 429 workspace_delivery_depth_exceeded, 503 database_overloaded; hops p50 20 s, max 108 s |
-| Continuous traffic: landing then replacement departure | NOT RUN | Hosted runs never reached a landing; the local run was reset for the Bay demo first |
-| Weather and smoke on the local engine | NOT RUN | Waiting for the floor after the Bay demo |
+| Continuous traffic: landing then replacement departure | PASS | Run 766d9e7a, local engine, 10x, rules: F007 LANDED 13:54:28; replacement F011 departed 6 s later, booked SFO and LANDED 13:55:07; F012 TAP239 SJC to OAK followed |
+| Smoke on cue (`--smoke-on-enter`) | PASS | Run db0e4302: prompt, Enter, position re-check, SMOKE; touchdown 72 s later |
+| Weather closure with diversions at 10 flights, local engine | NOT RUN | |
 | `bun run test:integration`, `test:e2e`, `test:live` | NOT RUN | Unit tests (183) and the simulation and recovery integration files (15) pass |
 
 ## Relay: hosted against local engine
@@ -111,6 +112,16 @@ Config: US network, focusRegion BAY_AREA, emergencyCandidateMode SEQUENTIAL, fea
 Decision sources in run b08768c0: SFO and SJC PROPOSE_OFFER, and F001's REQUEST_LANDING, two SELECT_OFFER and REQUEST_CLEARANCE, all MODEL. Example reasons: "SJC has a feasible offer and is the closest available landing option."; "Held slot is available on R1 at 330s, and arrivals are open." MRY's refusal is the closed-runway rule. Relay message IDs for the exchange: Mayday to MRY 242388723286163456, MRY refusal 242388726922625024, Mayday to SJC 242388728860393472, SJC offer 242388737320304640, accept 242388746107371520, SJC confirm 242388747600543744, clearance 242389059505766400.
 
 The earlier rules-mode Bay runs (4626010a, a9f85ce6) took 389 s from smoke to touchdown at 5x. A worker that claims a reset run before Start configured actors that did not exist yet, so they kept the HOSTED 450 s slot lead and rules decisions; 92e36b5 fixes it.
+
+LIVE_LOCAL booking budget 12 s (`RELAY_EXPECTED_BOOKING_WALL_SEC=12`, lead 120 sim s at 10x), live, 10x, seconds after the SMOKE:
+
+| Run | MRY refuses | SJC confirms | Clearance | Touchdown | Second round |
+|---|---|---|---|---|---|
+| db0e4302 (`--smoke-on-enter`) | 1.7 | 5.0 | 21.1 | 72.0 | no |
+| 65095f4f | 1.8 | 6.8 | 47.2 | 132.9 | no |
+| 6681d732 | 2.0 | 5.6 | | stopped for another run | no |
+
+The SJC slot was sim 330 in every run, so touchdown time depends on when the smoke goes in and on the tick rate.
 
 The effective sim rate is about 2x at the 5x setting and 2.8x at 10x, because the worker advances each of 24 entities with its own actor call every tick.
 
