@@ -405,7 +405,8 @@ export class HostedRelayTransport implements RelayTransport {
     /** The run's sender channels, plus the old shared run channel for messages already in flight. */
     private isRunChannel(name: unknown): boolean {
         if (typeof name !== "string" || !this.channel) return false
-        return name === this.channel || (name.startsWith(`${this.channel}-`) && name.endsWith(SENDER_CHANNEL_SUFFIX))
+        if (name === this.channel) return true
+        return name.endsWith(SENDER_CHANNEL_SUFFIX) && this.byHandle.has(name.slice(0, -SENDER_CHANNEL_SUFFIX.length))
     }
 
     private async deliver(raw: RawRelayMessage) {

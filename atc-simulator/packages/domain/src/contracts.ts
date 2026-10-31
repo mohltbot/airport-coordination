@@ -968,8 +968,12 @@ export type InitialWorld = { airports: AirportState[]; flights: FlightState[] }
 // Handles: ghost-<runId first 8>-controller, -atc-alp, -flight-f001. Actor IDs use the full run ID.
 // Terse actor IDs allow only letters, digits, dots, underscores and hyphens (1 to 128 chars), so the
 // plan's `<runId>/airport/ALP` is written `<runId>.airport.ALP` (see docs/integration-evidence.md).
-export function entityHandle(runId: string, entityId: EntityId): string {
-    const prefix = `ghost-${runId.slice(0, 8)}`
+// One Relay identity per entity ID, reused across runs: registering 3+N identities per run
+// cost 40 to 55 s and drew 429s from hosted Relay. Runs stay isolated by the envelope's runId
+// (decode and router reject another run's messages) and by run-scoped actor IDs. A new flight
+// leg with a new entity ID still gets its own identity.
+export function entityHandle(_runId: string, entityId: EntityId): string {
+    const prefix = "ghost"
     if (entityId === "controller") return `${prefix}-controller`
     if (entityId.startsWith("airport:")) return `${prefix}-atc-${entityId.slice(8).toLowerCase()}`
     return `${prefix}-flight-${entityId.slice(7).toLowerCase()}`

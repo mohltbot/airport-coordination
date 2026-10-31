@@ -91,9 +91,9 @@ describe("envelopes", () => {
 
 describe("identity helpers", () => {
     test("handles and actor IDs", () => {
-        expect(entityHandle(runId, "controller")).toBe("ghost-6a1f0c2e-controller")
-        expect(entityHandle(runId, "airport:ALP")).toBe("ghost-6a1f0c2e-atc-alp")
-        expect(entityHandle(runId, "flight:F001")).toBe("ghost-6a1f0c2e-flight-f001")
+        expect(entityHandle(runId, "controller")).toBe("ghost-controller")
+        expect(entityHandle(runId, "airport:ALP")).toBe("ghost-atc-alp")
+        expect(entityHandle(runId, "flight:F001")).toBe("ghost-flight-f001")
         expect(entityActorId(runId, "airport:ALP")).toBe(`${runId}.airport.ALP`)
         expect(entityActorId(runId, "flight:F012")).toBe(`${runId}.flight.F012`)
     })
