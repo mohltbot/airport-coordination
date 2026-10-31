@@ -96,16 +96,16 @@ describe("slot search", () => {
         expect(r.kind === "OFFER" && [r.offer.runwayId, r.offer.slotStartSimSec]).toEqual(["R1", 360])
     })
 
-    test("hosted Relay at 5x pushes the earliest slot out by minSlotLeadSimSec (225 s)", () => {
+    test("hosted Relay at 5x pushes the earliest slot out by minSlotLeadSimSec (450 s)", () => {
         const timing = negotiationTiming(RELAY_TIMING.HOSTED, 5)
-        expect(timing.minSlotLeadSimSec).toBe(225)
+        expect(timing.minSlotLeadSimSec).toBe(450)
         expect(timing.offerTtlMs).toBe(120_000)
         const r = findLandingOffer(alp(), { negotiationId: "F001-N1", flightId: "F001", requestMessageId: crypto.randomUUID(), facts: facts() }, {
             ...ctx,
             minSlotLeadSimSec: timing.minSlotLeadSimSec,
             offerTtlMs: timing.offerTtlMs,
         })
-        expect(r.kind === "OFFER" && r.offer.slotStartSimSec).toBe(540) // ceil((300 + 225) / 30) * 30
+        expect(r.kind === "OFFER" && r.offer.slotStartSimSec).toBe(750) // ceil((300 + 450) / 30) * 30
     })
 
     test("closed airport refuses; a closed runway is never offered", () => {

@@ -105,8 +105,8 @@ describe("timing profiles", () => {
         expect(RELAY_TIMING.LOCAL.offerTtlMs).toBe(20000)
         expect(RELAY_TIMING.HOSTED.replyCollectionWindowMs).toBe(60000)
         expect(RELAY_TIMING.HOSTED.offerTtlMs).toBe(120000)
-        expect(minSlotLeadSimSec(1, RELAY_TIMING.HOSTED)).toBe(60)
-        expect(minSlotLeadSimSec(5, RELAY_TIMING.HOSTED)).toBe(225)
+        expect(minSlotLeadSimSec(1, RELAY_TIMING.HOSTED)).toBe(90)
+        expect(minSlotLeadSimSec(5, RELAY_TIMING.HOSTED)).toBe(450)
         expect(minSlotLeadSimSec(10, RELAY_TIMING.LOCAL)).toBe(60)
     })
     test("env overrides", () => {

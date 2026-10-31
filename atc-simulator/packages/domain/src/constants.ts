@@ -137,7 +137,9 @@ export const RELAY_TIMING: { readonly [K in TransportProfile]: RelayTiming } = {
         ackRetrySteadyMs: 40_000,
         commandDelayedAfterMs: 15_000,
         defaultSpeed: 5,
-        expectedBookingWallSec: 45,
+        // 45 s raised to 90 s: a hosted booking measured 80 s at 3 flights, so confirmations
+        // failed revalidation (INFEASIBLE_CONFIRMATION) and flights needed a second round.
+        expectedBookingWallSec: 90,
     },
 }
 
