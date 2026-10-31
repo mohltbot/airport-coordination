@@ -13,3 +13,7 @@ playwright-report/
 dist/
 .DS_Store
 relay-tokens*.json
+
+# Agent Relay local engine database
+relaycast.db
+relaycast.db-*
