@@ -1,0 +1,23 @@
+{
+    "name": "actor",
+    "private": true,
+    "type": "module",
+    "engines": {
+        "bun": ">=1.4.2"
+    },
+    "scripts": {
+        "dev": "terse actor dev",
+        "check": "tsc --noEmit"
+    },
+    "dependencies": {
+        "terse-sdk": "0.14.9",
+        "zod": "^4.3.6"
+    },
+    "devDependencies": {
+        "@types/node": "^22.0.0",
+        "typescript": "~5.9.3"
+    },
+    "trustedDependencies": [
+        "esbuild"
+    ]
+}

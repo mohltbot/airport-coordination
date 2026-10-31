@@ -1,0 +1,8 @@
+node_modules/
+.env
+.env.*
+!.env.example
+.durable-actors/
+generated/
+dist/
+.DS_Store

@@ -1,0 +1,17 @@
+{
+    "name": "client",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "start": "bun index.ts",
+        "check": "tsc --noEmit"
+    },
+    "dependencies": {
+        "commander": "^14.0.3",
+        "terse-sdk": "0.14.9"
+    },
+    "devDependencies": {
+        "@types/node": "^22.0.0",
+        "typescript": "~5.9.3"
+    }
+}
