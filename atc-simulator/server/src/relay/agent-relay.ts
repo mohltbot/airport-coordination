@@ -437,6 +437,32 @@ export class HostedRelayTransport implements RelayTransport {
     }
 }
 
+/**
+ * Workspace event-log cursor persisted next to the token store. With the in-memory default
+ * every worker start re-read the workspace history from seq 0 (up to 50 pages a poll) against
+ * a hosted database that was answering 503 database_overloaded. The cursor is saved only after
+ * an event's handler finished (reconcile below), so a restart replays what was not delivered.
+ */
+export function fileCursorStore(path: string, workspaceKey: string): CursorStore {
+    const fp = workspaceFingerprint(workspaceKey)
+    let value = 0
+    try {
+        const saved = JSON.parse(readFileSync(path, "utf8")) as { workspaceFingerprint?: string; seq?: number }
+        if (saved.workspaceFingerprint === fp && Number.isFinite(saved.seq)) value = Number(saved.seq)
+    } catch {}
+    return {
+        load: async () => value,
+        save: async seq => {
+            if (seq <= value) return
+            value = seq
+            mkdirSync(dirname(path), { recursive: true })
+            const tmp = `${path}.${process.pid}.tmp`
+            writeFileSync(tmp, JSON.stringify({ workspaceFingerprint: fp, seq }), { mode: 0o600 })
+            renameSync(tmp, path)
+        },
+    }
+}
+
 /** Build the adapter from environment names in .env.example. */
 export function hostedRelayFromEnv(env: Record<string, string | undefined> = process.env, extra: Partial<HostedRelayOptions> = {}): HostedRelayTransport {
     const baseUrl = env.RELAY_BASE_URL || env.RELAY_BASE || DEFAULT_RELAY_BASE_URL
@@ -448,6 +474,7 @@ export function hostedRelayFromEnv(env: Record<string, string | undefined> = pro
         workspaceKey,
         tokenStore: fileTokenStore(storePath, { baseUrl, workspaceKey }),
         localEcho: env.RELAY_LOCAL_ECHO !== "0",
+        cursor: fileCursorStore(env.RELAY_CURSOR_PATH || ".data/relay-cursor.json", workspaceKey),
         maxConcurrentSends: Number(env.RELAY_MAX_CONCURRENT_SENDS) > 0 ? Number(env.RELAY_MAX_CONCURRENT_SENDS) : 4,
         ...extra,
     })
