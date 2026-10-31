@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Room</title>
+<style>
+  :root { --bg: #0d1117; --fg: #e6edf3; --muted: #8b949e; --line: #30363d; --accent: #58a6ff; --ok: #3fb950; --warn: #d29922; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+  h1 { font-size: 17px; margin: 0; }
+  .badge { font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+  .badge.ws { color: var(--ok); border-color: var(--ok); }
+  .badge.poll { color: var(--warn); border-color: var(--warn); }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 16px; }
+  button { background: #21262d; color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; font: inherit; cursor: pointer; }
+  button:active { transform: translateY(1px); }
+  ol { list-style: none; margin: 0; padding: 0 16px 24px; }
+  li { padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .meta { color: var(--muted); font-size: 12px; }
+  .from { color: var(--accent); font-weight: 600; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="room">Room</h1>
+  <span id="mode" class="badge">connecting</span>
+  <span id="count" class="badge">0 events</span>
+</header>
+<div class="controls">
+  <button data-as="tower">Send as tower</button>
+  <button data-as="airline">Send as airline</button>
+  <button id="alarm">Arm 15 s alarm</button>
+</div>
+<ol id="events"></ol>
+<script>
+  let events = []
+  let pollTimer = null
+  const $ = id => document.getElementById(id)
+
+  function render() {
+    $("count").textContent = `${events.length} events`
+    const list = $("events")
+    list.replaceChildren(...[...events].reverse().map(e => {
+      const li = document.createElement("li")
+      const head = document.createElement("div")
+      const from = document.createElement("span")
+      from.className = "from"
+      from.textContent = e.from
+      head.append(from, document.createTextNode(` ${e.text}`))
+      const meta = document.createElement("div")
+      meta.className = "meta"
+      meta.textContent = `${e.source} · ${new Date(e.at).toLocaleTimeString()}`
+      li.append(head, meta)
+      return li
+    }))
+  }
+
+  function setMode(mode) {
+    $("mode").textContent = mode === "ws" ? "live (websocket)" : "live (polling)"
+    $("mode").className = `badge ${mode}`
+  }
+
+  function startPolling() {
+    if (pollTimer) return
+    setMode("poll")
+    const tick = async () => {
+      try {
+        const s = await (await fetch("/state")).json()
+        $("room").textContent = s.room
+        events = s.events
+        render()
+      } catch {}
+    }
+    tick()
+    pollTimer = setInterval(tick, 1500)
+  }
+
+  async function connect() {
+    try {
+      const grant = await (await fetch("/grant")).json()
+      const ws = new WebSocket(grant.websocketUrl)
+      let opened = false
+      ws.onopen = () => { opened = true; setMode("ws") }
+      ws.onmessage = ({ data }) => {
+        const msg = JSON.parse(data)
+        if (msg.type === "state") events = msg.state.events
+        else if (msg.type === "state_update" && msg.changes.events) events = msg.changes.events
+        render()
+      }
+      ws.onerror = ws.onclose = () => startPolling()
+      setTimeout(() => { if (!opened) startPolling() }, 3000)
+    } catch {
+      startPolling()
+    }
+    fetch("/state").then(r => r.json()).then(s => { $("room").textContent = s.room }).catch(() => {})
+  }
+
+  document.querySelectorAll("button[data-as]").forEach(b => b.onclick = () =>
+    fetch("/send", { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ as: b.dataset.as, text: `Test from ${b.dataset.as} at ${new Date().toLocaleTimeString()}` }) }))
+  $("alarm").onclick = () => fetch("/alarm", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ms: 15000 }) })
+
+  connect()
+</script>
+</body>
+</html>

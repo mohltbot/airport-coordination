@@ -3,7 +3,8 @@
     "private": true,
     "type": "module",
     "scripts": {
-        "start": "bun index.ts",
+        "server": "bun --watch server.ts",
+        "relay:setup": "bun scripts/relay-setup.ts",
         "check": "tsc --noEmit"
     },
     "dependencies": {
