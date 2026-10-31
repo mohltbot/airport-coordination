@@ -1,0 +1,214 @@
+.ctrl-page,
+.join-page {
+  box-sizing: border-box;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 24px 16px 40px;
+  color: #f3f6f8;
+  font-size: 16px;
+  min-height: 100dvh;
+  background: #10161c;
+}
+.ctrl-page *,
+.join-page * {
+  box-sizing: border-box;
+}
+.ctrl-header {
+  padding-bottom: 24px;
+  border-bottom: 1px solid #344553;
+}
+.ctrl-header > p,
+.join-page > p {
+  color: #a9b7c4;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+}
+.ctrl-header h1,
+.join-page h1 {
+  font-size: 28px;
+  line-height: 1.15;
+  margin: 12px 0;
+}
+.ctrl-connection {
+  color: #a9b7c4;
+}
+.ctrl-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 16px 0;
+}
+.ctrl-tabs button {
+  flex: 1;
+  padding: 8px 4px;
+  font-size: 14px;
+}
+.ctrl-tabs button[aria-pressed="true"] {
+  border-color: #58c8dd;
+  color: #58c8dd;
+  background: #18222c;
+}
+.ctrl-page button,
+.join-page button,
+.incident-controls button,
+.command-status button,
+.incident-controls select,
+.ctrl-page input {
+  min-height: 44px;
+  max-width: 100%;
+}
+.ctrl-page button,
+.join-page button,
+.incident-controls button,
+.command-status button {
+  white-space: normal;
+}
+.ctrl-page button:focus-visible,
+.join-page button:focus-visible,
+.incident-controls button:focus-visible,
+.incident-controls select:focus-visible,
+.ctrl-page input:focus-visible {
+  outline: 2px solid #58c8dd;
+  outline-offset: 3px;
+}
+.ctrl-search,
+.incident-runway {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 16px 0;
+}
+.ctrl-search input,
+.incident-runway select {
+  width: 100%;
+  font: inherit;
+  background: #18222c;
+  color: #f3f6f8;
+  border: 1px solid #344553;
+  padding: 10px;
+  border-radius: 6px;
+}
+.ctrl-targets,
+.incident-controls ul,
+.command-status ul {
+  padding: 0;
+  list-style: none;
+}
+.ctrl-targets li {
+  margin: 8px 0;
+}
+.ctrl-targets button {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+  width: 100%;
+  padding: 16px;
+  background: #18222c;
+  border: 1px solid #344553;
+  border-radius: 8px;
+  color: #f3f6f8;
+}
+.ctrl-targets span {
+  color: #a9b7c4;
+  font-size: 14px;
+}
+.ctrl-detail h2 {
+  margin-bottom: 8px;
+}
+.ctrl-detail > p {
+  color: #a9b7c4;
+}
+.ctrl-banner,
+.incident-notice {
+  padding: 12px;
+  border: 1px solid #f0b35c;
+  border-radius: 6px;
+  color: #f0b35c;
+}
+.ctrl-empty {
+  padding: 24px 0;
+}
+.incident-controls {
+  min-width: 0;
+}
+.incident-actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+.incident-actions button {
+  text-align: left;
+}
+.incident-record {
+  padding: 16px 0;
+  border-top: 1px solid #344553;
+}
+.incident-record > div,
+.command-status li > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: space-between;
+}
+.incident-record span {
+  font-size: 12px;
+  color: #a9b7c4;
+}
+.incident-record p,
+.command-status p {
+  font-size: 14px;
+  color: #a9b7c4;
+  line-height: 1.5;
+}
+.incident-record button {
+  width: 100%;
+}
+.incident-controls summary {
+  min-height: 44px;
+  cursor: pointer;
+  padding: 12px 0;
+}
+.command-status {
+  margin: 24px 0;
+}
+.command-status h3 {
+  font-size: 16px;
+}
+.command-status li {
+  padding: 12px 0;
+  border-top: 1px solid #344553;
+}
+.command-state {
+  color: #58c8dd;
+  font-size: 12px;
+}
+.join-page {
+  padding-top: 64px;
+}
+.join-page p {
+  line-height: 1.6;
+}
+.join-page a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: #58c8dd;
+}
+.incident-compact h3 {
+  font-size: 16px;
+}
+.ctrl-page button:disabled,
+.join-page button:disabled,
+.incident-controls button:disabled,
+.command-status button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+@media (min-width: 600px) {
+  .incident-actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .ctrl-page {
+    padding: 32px 24px;
+  }
+}
