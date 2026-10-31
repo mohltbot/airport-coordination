@@ -42,3 +42,21 @@ test.describe('Display browser contract tests (mock transport)', () => {
     await page.getByRole('button', { name: /^Select ALP, CLOSED/ }).click(); await page.getByRole('tab', { name: 'Controls', exact: true }).click(); await expect(page.getByRole('button', { name: 'Weather closure', exact: true })).toBeDisabled();
   });
 });
+
+for (const phase of ['CONFIGURING', 'RUNNING', 'PAUSED'] as const) {
+  test(`operator can change speed in ${phase}`, async ({ page }) => {
+    const snapshot = fixture(); snapshot.phase = phase; snapshot.config.speed = 10;
+    const h = await harness(page, bootstrap(snapshot, 'OPERATOR')); await h.open('/');
+    await page.getByLabel('Run speed', {exact:true}).selectOption('1');
+    await expect.poll(() => h.state.posts.length).toBe(1);
+    expect(h.state.posts[0]!.path).toBe(`/api/runs/${snapshot.runId}/speed`);
+    expect(h.state.posts[0]!.body.speed).toBe(1);
+    await expect(page.getByLabel('Run speed', {exact:true})).toHaveValue('1');
+    if (phase === 'CONFIGURING') {
+      await expect(page.getByLabel('Simulation speed', {exact:true})).toHaveValue('1');
+      await page.getByRole('button',{name:'Start simulation',exact:true}).click();
+      await expect.poll(() => h.state.posts.length).toBe(3);
+      expect(h.state.posts[1]!.body.config.speed).toBe(1);
+    }
+  });
+}

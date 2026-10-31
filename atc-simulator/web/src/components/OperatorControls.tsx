@@ -9,6 +9,7 @@ export function RunSetup() {
   const [count, setCount] = useState(String(config?.flightCount ?? 10));
   const [seed, setSeed] = useState(String(config?.seed ?? 20261031));
   const [speed, setSpeed] = useState<1 | 5 | 10>(config?.speed ?? 5);
+  useEffect(() => { if (config?.speed) setSpeed(config.speed); }, [config?.speed]);
   const [network, setNetwork] = useState<"US" | "LEGACY">(config?.airportNetwork ?? "US");
   const [continuous, setContinuous] = useState(config?.continuousTraffic ?? true);
   const [error, setError] = useState<string | null>(null);
