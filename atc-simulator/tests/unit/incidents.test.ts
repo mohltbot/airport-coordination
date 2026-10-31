@@ -572,3 +572,54 @@ describe("target-side command ordering (review focus 1)", () => {
         expect(ReceivedEnvelopeSchema.safeParse(deliver(one.state.outbox[0]!.envelope)).success).toBe(true)
     })
 })
+
+describe("controller ports", () => {
+    test("signer receives the assigned sequence; attempts move QUEUED to SENT; ACK and result settle the entry", async () => {
+        const { recordControllerOutboxAttempt, receiveControllerMessage, listControllerOutbox } = await import("../../packages/domain/src/command-ledger.ts")
+        const inc = weather()
+        const create = createCmd(inc)
+        const clr = clearCmd(inc.incidentId, "airport:ALP")
+        const seen: number[] = []
+        const sign = (f: { commandSequence: number; type: string }) => (seen.push(f.commandSequence), `v1.${f.type}.${f.commandSequence}`)
+        let sim = simulation()
+        for (const c of [create, clr]) {
+            const r = submitCommandToLedger(sim, c, principal, { wallNowMs: T0, authorization: sign })
+            if (!r.ok) throw new Error(r.code)
+            sim = r.state
+        }
+        expect(seen).toEqual([1, 2])
+        const createId = sim.commands[create.commandId]!.messageId
+        expect((sim.controllerOutbox[0]!.envelope as { authorization: string }).authorization).toBe("v1.INCIDENT_CREATE.1")
+
+        sim = recordControllerOutboxAttempt(sim, { messageId: createId, transportMessageId: "relay-9", attemptCount: 1, nextAttemptAtWallMs: T0 + 5000 }, T0 + 100)
+        expect(readCommandReceipt(sim, create.commandId)!.status).toBe("SENT")
+        // Recording an attempt on a parked entry never unparks it.
+        const clearId = sim.commands[clr.commandId]!.messageId
+        sim = recordControllerOutboxAttempt(sim, { messageId: clearId, transportMessageId: null, attemptCount: 0, nextAttemptAtWallMs: T0 }, T0 + 100)
+        expect(dueControllerOutbox(sim, T0 + 10_000).map(e => e.envelope.messageId)).toEqual([createId])
+
+        const target = receiveControllerCommand(airport(), envelopeFor(sim, create.commandId), ctx())
+        const ack = deliver({
+            schemaVersion: 1,
+            messageId: uuid(),
+            runId,
+            fromEntityId: "airport:ALP",
+            toEntityId: "controller",
+            correlationId: create.commandId,
+            causationId: createId,
+            createdAtWallMs: T0,
+            expiresAtWallMs: null,
+            type: "DOMAIN_ACK",
+            payload: { processedMessageId: createId, resultCode: "OK" },
+        })
+        const acked = receiveControllerMessage(sim, ack, T0 + 6000)
+        expect(acked.result.outcome).toBe("APPLIED")
+        expect(listControllerOutbox(acked.state).map(e => e.envelope.messageId)).toEqual([clearId])
+        // ACK alone does not release the clear: the create has no result yet.
+        expect(dueControllerOutbox(acked.state, T0 + 10_000)).toEqual([])
+        const settled = receiveControllerMessage(acked.state, resultsFrom(target.state)[0]!, T0 + 7000)
+        expect(readCommandReceipt(settled.state, create.commandId)!.status).toBe("APPLIED")
+        expect(dueControllerOutbox(settled.state, T0 + 7000).map(e => e.envelope.messageId)).toEqual([clearId])
+        expect(receiveControllerMessage(settled.state, ack, T0 + 8000).result.outcome).toBe("DUPLICATE")
+    })
+})

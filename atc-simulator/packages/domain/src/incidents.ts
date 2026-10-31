@@ -141,6 +141,11 @@ const FLIGHT_KINDS: ReadonlySet<IncidentKind> = new Set(["SMOKE", "ENGINE_TROUBL
 
 // ---------------------------------------------------------------- small helpers
 
+/** True for INCIDENT_CREATE / INCIDENT_CLEAR; route those to receiveControllerCommand. */
+export function isControllerCommand(message: ReceivedEnvelope): message is ControllerCommandEnvelope {
+    return message.type === "INCIDENT_CREATE" || message.type === "INCIDENT_CLEAR"
+}
+
 export function isAirportState(state: EntityState): state is AirportState {
     return state.entityId.startsWith("airport:")
 }

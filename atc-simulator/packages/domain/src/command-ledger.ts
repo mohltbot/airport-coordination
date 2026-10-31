@@ -48,10 +48,21 @@ export type LedgerError = {
 export type LedgerSubmitOk = { ok: true; state: SimulationState; receipt: CommandReceipt; duplicate: boolean; messageId: string }
 export type LedgerSubmitResult = LedgerSubmitOk | LedgerError
 
+/** Fields the server-issued proof binds (same shape as server/src/relay/router.ts CommandProofFields). */
+export type CommandProofFields = {
+    runId: string
+    commandId: string
+    commandSequence: number
+    toEntityId: string
+    type: "INCIDENT_CREATE" | "INCIDENT_CLEAR"
+    incidentId: string
+}
+
 export type LedgerSubmitOptions = {
     wallNowMs: number
-    /** Server-issued proof carried in the envelope (gateway signs it). */
-    authorization: string
+    /** Server-issued proof carried in the envelope. Pass a signer, e.g.
+     *  `f => commandProof(secret, f)`, because the sequence is assigned here. */
+    authorization: string | ((fields: CommandProofFields) => string)
     expiryMs?: number
 }
 
@@ -126,7 +137,10 @@ export function submitCommandToLedger(
         expiresAtWallMs: opts.wallNowMs + (opts.expiryMs ?? COMMAND_EXPIRY_MS),
         commandId: command.commandId,
         commandSequence,
-        authorization: opts.authorization,
+        authorization:
+            typeof opts.authorization === "function"
+                ? opts.authorization({ runId: state.runId, commandId: command.commandId, commandSequence, toEntityId: target, type: command.type, incidentId: command.payload.incidentId })
+                : opts.authorization,
     }
     const envelope: ProtocolEnvelope =
         command.type === "INCIDENT_CREATE" ? { ...base, type: "INCIDENT_CREATE", payload: command.payload } : { ...base, type: "INCIDENT_CLEAR", payload: command.payload }
@@ -307,4 +321,72 @@ export function listCommandReceipts(state: SimulationState, limit = 50): Command
         .sort((a, b) => b.submittedAtWallMs - a.submittedAtWallMs || b.commandSequence - a.commandSequence)
         .slice(0, limit)
         .map(e => e.receipt)
+}
+
+// ---------------------------------------------------------------- worker ports
+
+/** Un-acknowledged controller outbox entries (OutboxPort.list). Parked
+ *  entries are included; their nextAttemptAtWallMs keeps them from being due. */
+export function listControllerOutbox(state: SimulationState): OutboxEntry[] {
+    return state.controllerOutbox.filter(e => !e.acknowledged)
+}
+
+export type ControllerOutboxAttempt = { messageId: string; transportMessageId: string | null; attemptCount: number; nextAttemptAtWallMs: number }
+
+/** OutboxPort.recordAttempt for the controller outbox. A transport receipt
+ *  moves the command receipt from QUEUED to SENT. Never parks or unparks. */
+export function recordControllerOutboxAttempt(state: SimulationState, attempt: ControllerOutboxAttempt, wallNowMs: number): SimulationState {
+    const idx = state.controllerOutbox.findIndex(e => e.envelope.messageId === attempt.messageId)
+    if (idx < 0) return state
+    const entry = state.controllerOutbox[idx]!
+    const updated: OutboxEntry = {
+        ...entry,
+        attemptCount: Math.max(entry.attemptCount, attempt.attemptCount),
+        nextAttemptAtWallMs: entry.nextAttemptAtWallMs === PARKED_AT_WALL_MS ? entry.nextAttemptAtWallMs : attempt.nextAttemptAtWallMs,
+        transportMessageId: attempt.transportMessageId ?? entry.transportMessageId,
+    }
+    let next: SimulationState = { ...state, controllerOutbox: state.controllerOutbox.map((e, i) => (i === idx ? updated : e)) }
+    const ledger = Object.values(state.commands).find(e => e.messageId === attempt.messageId)
+    if (ledger && attempt.transportMessageId && ledger.receipt.status === "QUEUED") next = updateReceipt(next, ledger.command.commandId, { status: "SENT" }, wallNowMs)
+    return { ...next, stateRevision: state.stateRevision + 1 }
+}
+
+/** Entry point for messages addressed to the controller (worker receiveController):
+ *  COMMAND_RESULT updates the ledger; DOMAIN_ACK marks the acknowledged outbox
+ *  entry. Both dedup on messageId via controllerInbox. */
+export function receiveControllerMessage(state: SimulationState, message: ReceivedEnvelope, wallNowMs: number): { state: SimulationState; result: DomainResult } {
+    if (message.type === "COMMAND_RESULT") {
+        const r = applyCommandResult(state, message, wallNowMs)
+        return { state: r.state, result: r.result }
+    }
+    const prior = state.controllerInbox[message.messageId]
+    if (prior) return { state, result: { outcome: "DUPLICATE", code: prior.result.code, stateRevision: state.stateRevision, original: prior.result } }
+    let outcome: "APPLIED" | "REJECTED" = "REJECTED"
+    let code = "INVALID_PAYLOAD"
+    let next = state
+    if (message.runId !== state.runId) code = "WRONG_RUN"
+    else if (message.toEntityId !== "controller") code = "UNAUTHORIZED"
+    else if (message.type === "DOMAIN_ACK") {
+        const target = state.controllerOutbox.find(e => e.envelope.messageId === message.payload.processedMessageId)
+        if (!target) code = "UNKNOWN_INCIDENT"
+        else if (target.envelope.toEntityId !== message.fromEntityId) code = "UNAUTHORIZED"
+        else {
+            outcome = "APPLIED"
+            code = "OK"
+            if (!target.acknowledged)
+                next = { ...state, controllerOutbox: state.controllerOutbox.map(e => (e === target ? { ...e, acknowledged: true } : e)) }
+        }
+    }
+    const result = { outcome, code, stateRevision: next.stateRevision + 1 }
+    return {
+        state: {
+            ...next,
+            stateRevision: result.stateRevision,
+            controllerInbox: {
+                ...next.controllerInbox,
+                [message.messageId]: { messageId: message.messageId, type: message.type, fromEntityId: message.fromEntityId, result, processedAtWallMs: wallNowMs },
+            },
+        },
+        result,
+    }
 }
