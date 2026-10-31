@@ -566,7 +566,9 @@ async function main() {
         // Delivered messages: latency from envelope creation, and anything not applied cleanly.
         onRoute: e => {
             if (e.outcome !== "SKIPPED") relayStats.hop(e.latencyMs)
-            if (e.outcome === "SKIPPED" || e.detail || e.latencyMs > 15_000 || !e.ackSent)
+            // Local echo delivers first, so the event-log copy is an expected SKIPPED/DUPLICATE.
+            const echoCopy = e.outcome === "SKIPPED" && e.code === "DUPLICATE"
+            if (!echoCopy && (e.outcome === "SKIPPED" || e.detail || e.latencyMs > 15_000 || (!e.ackSent && e.type !== "DOMAIN_ACK")))
                 log(`relay recv ${e.type} ${e.from}->${e.to} ${e.outcome}/${e.code} ${e.latencyMs}ms ack=${e.ackSent}${e.detail ? ` ${e.detail}` : ""}`)
         },
         onStatus: s => {
