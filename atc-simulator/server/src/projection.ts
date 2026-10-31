@@ -4,8 +4,11 @@
 // projectionVersion is stamped here as max(previous + 1, wall ms): strictly increasing per run and
 // across gateway restarts, so a reconnecting browser never sees a lower version than before.
 import { SSE_MAX_HZ } from "@ghost-tower/domain/constants"
-import type { CommandReceipt, PublicSnapshot } from "@ghost-tower/domain/contracts"
+import type { AirportId, AirportState, CommandReceipt, FlightState, PublicSnapshot, SimulationState, WorkerLease } from "@ghost-tower/domain/contracts"
+import { buildPublicSnapshot } from "@ghost-tower/domain/projections"
 import type { SimulationBackend } from "./actors.ts"
+import type { TickOutcome } from "./simulation/clock.ts"
+import type { WorkerRepository, WorkerStatus } from "./simulation/worker.ts"
 
 export type HubEvent =
     | { type: "snapshot"; snapshot: PublicSnapshot }
@@ -144,5 +147,72 @@ export class ProjectionHub {
     close() {
         for (const w of this.watches.values()) if (w.timer) clearInterval(w.timer)
         this.watches.clear()
+    }
+}
+
+// ---------------------------------------------------------------- worker publisher
+
+/** Minimum wall gap between published projections: the tick loop runs at 4 Hz, the actor write need not. */
+const PUBLISH_MIN_MS = 500
+
+type PublisherSim = {
+    readRun(runId: string): Promise<SimulationState | null>
+    publishProjection(lease: WorkerLease, snapshot: PublicSnapshot): Promise<void>
+}
+
+/**
+ * Worker-side projection (worker.ts loads this by name): read every entity of the leased run, redact
+ * with the domain projection, stamp the worker's own health, and persist it with publishProjection.
+ * The gateway serves it while it is fresh and treats a stale one as a stopped worker.
+ */
+export function createWorkerPublisher(deps: { repo: WorkerRepository; env: Record<string, string | undefined> }) {
+    const { repo, env } = deps
+    const agentMode = env.AGENT_MODE?.trim().toLowerCase() === "live" ? ("live" as const) : ("rules" as const)
+    const relayConfigured = Boolean(env.RELAY_BASE_URL?.trim() && env.RELAY_WORKSPACE_KEY?.trim())
+    const modelConfigured = Boolean(env.OPENAI_API_KEY?.trim() && env.OPENAI_MODEL?.trim())
+    const sim = repo.simulation as unknown as PublisherSim
+    let lastAt = 0
+    let busy = false
+    return async (lease: WorkerLease, _outcome: TickOutcome | null, status: WorkerStatus): Promise<void> => {
+        const now = Date.now()
+        if (busy || now - lastAt < PUBLISH_MIN_MS) return
+        busy = true
+        try {
+            const run = await sim.readRun(lease.runId)
+            if (!run) return
+            const ids = run.entities.map(e => e.entityId).filter(id => id !== "controller")
+            const states = await Promise.all(
+                ids.map(id => (id.startsWith("airport:") ? repo.airport(run.runId, id.slice(8) as AirportId).read() : repo.flight(run.runId, id.slice(7)).read())),
+            )
+            const { workerHealth } = await import("./simulation/worker.ts")
+            const worker = workerHealth(status)
+            const snapshot = buildPublicSnapshot({
+                run,
+                airports: states.filter((s): s is AirportState => s.entityId.startsWith("airport:")),
+                flights: states.filter((s): s is FlightState => s.entityId.startsWith("flight:")),
+                wallNowMs: Date.now(),
+                projectionVersion: run.projectionVersion + 1,
+                agentMode,
+                health: {
+                    actors: { status: "READY", detail: null },
+                    relay: !relayConfigured
+                        ? { status: "UNAVAILABLE", detail: "Relay not configured" }
+                        : worker.status === "READY"
+                          ? { status: "READY", detail: null }
+                          : { status: "DEGRADED", detail: "Worker reconnecting Relay identities" },
+                    model:
+                        agentMode === "rules"
+                            ? { status: "DEGRADED", detail: "Rules mode" }
+                            : modelConfigured
+                              ? { status: "READY", detail: env.OPENAI_MODEL?.trim() ?? null }
+                              : { status: "UNAVAILABLE", detail: "Live mode needs OPENAI_API_KEY and OPENAI_MODEL" },
+                    worker,
+                },
+            })
+            await sim.publishProjection(lease, snapshot)
+            lastAt = now
+        } finally {
+            busy = false
+        }
     }
 }

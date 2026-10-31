@@ -6,6 +6,7 @@
 import { existsSync } from "node:fs"
 import { entityActorId } from "@ghost-tower/domain/contracts"
 import { buildPublicSnapshot } from "@ghost-tower/domain/projections"
+import { createWorld } from "@ghost-tower/domain/world"
 import type {
     AirportEntityId,
     AirportState,
@@ -14,6 +15,9 @@ import type {
     ControllerPrincipal,
     FlightState,
     IncidentCommand,
+    InitStep,
+    MutationContext,
+    DomainResult,
     PublicSnapshot,
     RunConfig,
     RunDescriptor,
@@ -22,6 +26,7 @@ import type {
 } from "@ghost-tower/domain/contracts"
 import type { AppConfig } from "./config.ts"
 import { fail, toApiFailure } from "./errors.ts"
+import { initializeRun, type InitDeps } from "./simulation/initialize.ts"
 
 export type Health = PublicSnapshot["health"]
 export type LifecycleAction = "start" | "pause" | "resume"
@@ -58,9 +63,11 @@ export interface SimulationActorApi {
     submitCommand(command: IncidentCommand, principal: ControllerPrincipal): Promise<CommandReceipt>
     readCommand(runId: string, commandId: string): Promise<CommandReceipt>
     readPublic(runId: string): Promise<PublicSnapshot | null>
+    recordInitStep(runId: string, step: InitStep): Promise<string[]>
 }
 export interface EntityActorApi<S> {
     read(): Promise<S | null>
+    initialize(context: MutationContext, state: S): Promise<DomainResult>
 }
 
 type GeneratedActors = {
@@ -92,9 +99,19 @@ export class ActorRepository {
     flight(runId: string, entityId: FlightEntityId): EntityActorApi<FlightState> | null {
         return this.actors.FlightActor?.get(entityActorId(runId, entityId)) ?? null
     }
+    /** Ports for the Task 2 initialization saga (server/src/simulation/initialize.ts). */
+    initDeps(): InitDeps {
+        const { AirportActor, FlightActor } = this.actors
+        if (!AirportActor || !FlightActor) throw fail(503, "ACTORS_UNAVAILABLE", "Actor client lacks AirportActor/FlightActor. Run bun run actors:generate.", true)
+        return { sim: this.simulation(), airport: id => AirportActor.get(id), flight: id => FlightActor.get(id) }
+    }
 }
 
 // ---------------------------------------------------------------- ActorBackend
+
+/** Worker projections older than this are stale: the gateway gathers from the actors instead. */
+const PUBLISHED_FRESH_MS = 4_000
+const ACTOR_PROBE_MS = 5_000
 
 const LOCKED: ReadonlySet<RunPhase> = new Set(["STARTING", "RUNNING", "PAUSED"])
 const PHASE_FOR: Record<LifecycleAction, RunPhase> = { start: "STARTING", pause: "PAUSED", resume: "RUNNING" }
@@ -103,6 +120,7 @@ export class ActorBackend implements SimulationBackend {
     readonly mode = "actors" as const
     private lastOk = 0
     private lastError: string | null = null
+    private starting = new Map<string, Promise<RunDescriptor>>()
 
     constructor(
         private readonly repo: ActorRepository | null,
@@ -147,7 +165,30 @@ export class ActorBackend implements SimulationBackend {
     }
 
     async lifecycle(runId: string, action: LifecycleAction, operationId: string) {
-        return this.call(sim => sim.setRunPhase(runId, PHASE_FOR[action], operationId))
+        if (action !== "start") return this.call(sim => sim.setRunPhase(runId, PHASE_FOR[action], operationId))
+        // One start per run in this process; a retry with the same operationId joins it.
+        let pending = this.starting.get(runId)
+        if (!pending) {
+            pending = this.start(runId, operationId).finally(() => this.starting.delete(runId))
+            this.starting.set(runId, pending)
+        }
+        return pending
+    }
+
+    /**
+     * Design §8 "Finish initialization and start simulation": CONFIGURING -> STARTING, run the
+     * resumable init saga (every actor initialize is idempotent), then STARTING -> PAUSED like the
+     * fixture. Retrying Start on a half-initialized run resumes the saga instead of making new flights.
+     */
+    private async start(runId: string, operationId: string): Promise<RunDescriptor> {
+        let run = await this.call(sim => sim.getRun(runId))
+        if (!run) throw fail(404, "UNKNOWN_RUN", "No run with that ID.")
+        if (run.phase === "CONFIGURING") run = await this.call(sim => sim.setRunPhase(runId, "STARTING", operationId))
+        if (run.phase !== "STARTING") return run
+        const deps = this.repo?.initDeps()
+        if (!deps) throw fail(503, "ACTORS_UNAVAILABLE", "Actor client not generated yet. Run bun run actors:generate.", true)
+        await this.call(() => initializeRun(deps, runId))
+        return this.call(sim => sim.setRunPhase(runId, "PAUSED", `${operationId}:ready`))
     }
 
     async setSpeed(runId: string, speed: RunConfig["speed"], operationId: string) {
@@ -183,8 +224,9 @@ export class ActorBackend implements SimulationBackend {
             .sort((a, b) => a.submittedAtWallMs - b.submittedAtWallMs)
             .slice(-100)
             .map(e => e.receipt)
-        const health = await this.health()
-        if (published) {
+        const health = await this.health(published)
+        const fresh = published && Date.now() - published.serverWallTimeMs <= PUBLISHED_FRESH_MS
+        if (published && fresh && run.phase !== "CONFIGURING") {
             return { ...published, phase: run.phase, config: run.config, commands: receipts, health: { ...published.health, actors: health.actors } }
         }
         return this.gather(run, health)
@@ -194,6 +236,19 @@ export class ActorBackend implements SimulationBackend {
         const repo = this.repo!
         const airports: AirportState[] = []
         const flights: FlightState[] = []
+        if (run.phase === "CONFIGURING") {
+            // Nothing is initialized before Start; show the deterministic seeded world it will create.
+            const world = createWorld(run.config, { runId: run.runId, operationId: `init-${run.runId}` })
+            return buildPublicSnapshot({
+                run,
+                airports: world.airports,
+                flights: world.flights,
+                wallNowMs: Date.now(),
+                projectionVersion: run.projectionVersion,
+                health,
+                agentMode: this.config.agentMode,
+            })
+        }
         await Promise.all(
             run.entities.map(async e => {
                 if (e.entityId === "controller") return
@@ -212,29 +267,56 @@ export class ActorBackend implements SimulationBackend {
             flights,
             wallNowMs: Date.now(),
             projectionVersion: run.projectionVersion,
-            health: { ...health, worker: { status: "UNAVAILABLE", detail: "No worker projection published yet" } },
+            health,
             agentMode: this.config.agentMode,
         })
     }
 
-    async health(): Promise<Health> {
+    /**
+     * Real dependency status. Actors: probed when not contacted in the last few seconds. Worker,
+     * Relay and model: taken from the worker's newest published projection, which goes stale (and
+     * reads UNAVAILABLE) when the worker stops publishing.
+     */
+    async health(published?: PublicSnapshot | null): Promise<Health> {
+        if (this.repo && Date.now() - this.lastOk > ACTOR_PROBE_MS) {
+            await this.call(sim => sim.activeRun()).catch(() => {})
+        }
         const actors = !this.repo
             ? { status: "UNAVAILABLE" as const, detail: "Actor client not generated" }
             : this.lastError
               ? { status: "UNAVAILABLE" as const, detail: "Simulation actor not answering" }
-              : this.lastOk
-                ? { status: "READY" as const, detail: null }
-                : { status: "DEGRADED" as const, detail: "Not contacted yet" }
-        return {
-            actors,
-            relay: { status: "DEGRADED", detail: "Reported by the worker" },
-            model:
-                this.config.agentMode === "rules"
-                    ? { status: "DEGRADED", detail: "Rules mode" }
-                    : this.config.modelConfigured
-                      ? { status: "READY", detail: null }
-                      : { status: "UNAVAILABLE", detail: "Live mode needs OPENAI_API_KEY and OPENAI_MODEL" },
-            worker: { status: "DEGRADED", detail: "Reported by the worker" },
+              : { status: "READY" as const, detail: null }
+        if (published === undefined && this.repo && !this.lastError) {
+            const active = await this.simOrNull()?.activeRun().catch(() => null)
+            published = active ? await this.simOrNull()!.readPublic(active.runId).catch(() => null) : null
         }
+        const model: Health["model"] =
+            this.config.agentMode === "rules"
+                ? { status: "DEGRADED", detail: "Rules mode" }
+                : this.config.modelConfigured
+                  ? { status: "READY", detail: null }
+                  : { status: "UNAVAILABLE", detail: "Live mode needs OPENAI_API_KEY and OPENAI_MODEL" }
+        if (!published) {
+            return {
+                actors,
+                relay: { status: "UNAVAILABLE", detail: "No worker connected" },
+                model,
+                worker: { status: "UNAVAILABLE", detail: "No worker projection published yet" },
+            }
+        }
+        const ageSec = Math.round((Date.now() - published.serverWallTimeMs) / 1000)
+        if (ageSec * 1000 > PUBLISHED_FRESH_MS) {
+            return {
+                actors,
+                relay: { status: "DEGRADED", detail: `Worker last reported ${ageSec}s ago` },
+                model: published.health.model ?? model,
+                worker: { status: "UNAVAILABLE", detail: `RECOVERING: no worker projection for ${ageSec}s` },
+            }
+        }
+        return { ...published.health, actors }
+    }
+
+    private simOrNull(): SimulationActorApi | null {
+        return this.repo?.simulation() ?? null
     }
 }
