@@ -16,7 +16,7 @@ import type {
     TouchdownInput,
     TouchdownReceipt,
 } from "@ghost-tower/domain/contracts"
-import { JOB_LEASE_MS, RELAY_TIMING, type TransportProfile } from "@ghost-tower/domain/constants"
+import { JOB_LEASE_MS, RELAY_TIMING, type NegotiationTimingOverrides, type TransportProfile } from "@ghost-tower/domain/constants"
 import { isControllerCommand, receiveControllerCommand } from "@ghost-tower/domain/incidents"
 import {
     appendOutbox,
@@ -228,11 +228,11 @@ export class AirportActor extends Actor<null, null> {
     // Called by the worker at start and on setSpeed. Profile defaults to HOSTED.
     async configureNegotiation(
         context: MutationContext,
-        options: { profile?: TransportProfile; speed: 1 | 5 | 10; decisionMode?: DecisionMode },
+        options: { profile?: TransportProfile; speed: 1 | 5 | 10; decisionMode?: DecisionMode; timing?: NegotiationTimingOverrides },
     ): Promise<DomainResult> {
         const fence = fenceOnly(this.state, context)
         if (fence) return fence
-        this.timing = negotiationTiming(RELAY_TIMING[options.profile ?? "HOSTED"], options.speed)
+        this.timing = negotiationTiming({ ...RELAY_TIMING[options.profile ?? "HOSTED"], ...(options.timing ?? {}) }, options.speed)
         if (options.decisionMode) this.decisionMode = options.decisionMode
         return applied(this.state?.stateRevision ?? 0)
     }

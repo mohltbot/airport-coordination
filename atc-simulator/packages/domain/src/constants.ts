@@ -289,6 +289,13 @@ export type RelayTiming = {
     defaultSpeed: 1 | 5 | 10 // 1, 5 and 10 stay selectable
     expectedBookingWallSec: number
 }
+/** Negotiation fields the worker may override from its env (RELAY_*), applied by the actors. */
+export type NegotiationTimingOverrides = {
+    replyCollectionWindowMs?: number
+    offerAcceptTimeoutMs?: number
+    offerTtlMs?: number
+    expectedBookingWallSec?: number
+}
 export const RELAY_TIMING: { readonly [K in TransportProfile]: RelayTiming } = {
     LOCAL: {
         replyCollectionWindowMs: COLLECTION_WINDOW_MS,

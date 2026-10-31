@@ -14,7 +14,7 @@ import type {
     Tick,
     TouchdownReceipt,
 } from "@ghost-tower/domain/contracts"
-import { JOB_LEASE_MS, RELAY_TIMING, type TransportProfile } from "@ghost-tower/domain/constants"
+import { JOB_LEASE_MS, RELAY_TIMING, type NegotiationTimingOverrides, type TransportProfile } from "@ghost-tower/domain/constants"
 import { advanceFlight, applyApproachGuard, recordFlightTouchdown, type FlightHooks } from "../../packages/domain/src/flight.js"
 import {
     acknowledgeRelease,
@@ -202,10 +202,11 @@ export function touchdownStep(settings: object, current: FlightState | null, ctx
 
 // ---------------------------------------------------------------- settings and wall-clock timers
 
-export type FlightNegotiationOptions = { profile?: TransportProfile; speed: 1 | 5 | 10; decisionMode?: DecisionMode }
+export type FlightNegotiationOptions = { profile?: TransportProfile; speed: 1 | 5 | 10; decisionMode?: DecisionMode; timing?: NegotiationTimingOverrides }
 
+// Profile values, with the worker's env overrides (e.g. RELAY_EXPECTED_BOOKING_WALL_SEC) on top.
 export function configuredTiming(options: FlightNegotiationOptions): NegotiationTiming {
-    return negotiationTiming(RELAY_TIMING[options.profile ?? "HOSTED"], options.speed)
+    return negotiationTiming({ ...RELAY_TIMING[options.profile ?? "HOSTED"], ...(options.timing ?? {}) }, options.speed)
 }
 
 // Collection deadline, acceptance status check and no-feasible retry fire on wall

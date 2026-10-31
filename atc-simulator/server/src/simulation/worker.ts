@@ -30,7 +30,7 @@ import type {
     RelayTransport,
     WorkerLease,
 } from "@ghost-tower/domain/contracts"
-import { SCHEDULER_INTERVAL_MS, WORKER_RENEW_MS } from "@ghost-tower/domain/constants"
+import { SCHEDULER_INTERVAL_MS, WORKER_RENEW_MS, resolveRelayTiming } from "@ghost-tower/domain/constants"
 import { AgentRunner, pendingWorkFromJobs, type AgentEntityId, type AgentRunnerOptions, type PendingWork } from "../agents/runner.ts"
 import type { AgentModel, FallbackPolicy } from "../agents/model.ts"
 import { attachRouter, type RouteEvent } from "../relay/router.ts"
@@ -50,7 +50,13 @@ export interface EntityWorkApi {
     configureNegotiation?(context: MutationContext, options: NegotiationSettings): Promise<DomainResult>
 }
 
-export type NegotiationSettings = { profile: "HOSTED" | "LOCAL" | "LIVE_LOCAL"; speed: 1 | 5 | 10; decisionMode: "IMMEDIATE" | "JOB" }
+export type NegotiationSettings = {
+    profile: "HOSTED" | "LOCAL" | "LIVE_LOCAL"
+    speed: 1 | 5 | 10
+    decisionMode: "IMMEDIATE" | "JOB"
+    /** Env overrides of the profile's negotiation timing (RELAY_EXPECTED_BOOKING_WALL_SEC and friends). */
+    timing?: { replyCollectionWindowMs: number; offerAcceptTimeoutMs: number; offerTtlMs: number; expectedBookingWallSec: number }
+}
 
 export type OutboxAttempt = { messageId: string; transportMessageId: string | null; attemptCount: number; nextAttemptAtWallMs: number }
 
@@ -496,6 +502,11 @@ export function relayHealthTracker(label = "hosted Relay", now: () => number = D
 
 // ------------------------------------------------------------ process entry
 
+function negotiationTimingFromEnv(profile: NegotiationSettings["profile"], env: Record<string, string | undefined>): NegotiationSettings["timing"] {
+    const t = resolveRelayTiming(profile, env)
+    return { replyCollectionWindowMs: t.replyCollectionWindowMs, offerAcceptTimeoutMs: t.offerAcceptTimeoutMs, offerTtlMs: t.offerTtlMs, expectedBookingWallSec: t.expectedBookingWallSec }
+}
+
 // `bun server/src/simulation/worker.ts` (from atc-simulator/). Wires the real
 // Terse repository (server/src/actors.ts), Relay adapter and model from env.
 // Modules owned by other tasks are loaded by URL so this file typechecks before they land.
@@ -579,6 +590,7 @@ async function main() {
         commandSecret: env.COMMAND_SIGNING_SECRET ?? null,
         negotiation: {
             profile: relayProfile,
+            timing: negotiationTimingFromEnv(relayProfile, env),
             decisionMode: env.GHOST_DECISION_MODE === "IMMEDIATE" || env.GHOST_DECISION_MODE === "JOB" ? env.GHOST_DECISION_MODE : env.AGENT_MODE === "live" ? "JOB" : "IMMEDIATE",
         },
         dispatchOutboxes,
