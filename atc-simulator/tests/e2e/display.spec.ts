@@ -60,3 +60,13 @@ for (const phase of ['CONFIGURING', 'RUNNING', 'PAUSED'] as const) {
     }
   });
 }
+
+ test('fresh run can initialize before its first worker projection', async ({ page }) => {
+  const snapshot = fixture(); snapshot.phase = 'CONFIGURING';
+  snapshot.health.relay = { status: 'UNAVAILABLE', detail: 'No worker connected' };
+  snapshot.health.worker = { status: 'UNAVAILABLE', detail: 'No worker projection published yet' };
+  const h = await harness(page, bootstrap(snapshot, 'OPERATOR')); await h.open('/');
+  await expect(page.getByRole('button', { name: 'Start simulation', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'Start simulation', exact: true }).click();
+  await expect.poll(() => h.state.posts.some(r => r.path.endsWith('/start'))).toBe(true);
+ });
