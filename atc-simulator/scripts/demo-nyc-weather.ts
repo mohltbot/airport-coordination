@@ -205,7 +205,7 @@ async function main() {
         tally[final] = (tally[final] ?? 0) + 1
         console.log(`  ${f.flightId} ${f.callsign} (${f.originalDestination}): ${f.phase} ${final}${f.unresolvedReason ? ` (${f.unresolvedReason})` : ""}`)
         if (f.originalDestination !== CLOSED) continue
-        if (OPEN.includes(final)) diverted++
+        if (f.phase === "LANDED" && OPEN.includes(final)) diverted++
         console.log(fmt("JFK revokes booking", first("RESERVATION_REVOKED", e => e.fromEntityId === `airport:${CLOSED}` && e.toEntityId === F)))
         console.log(fmt("JFK refuses", first("LANDING_REFUSED", e => e.fromEntityId === `airport:${CLOSED}` && e.toEntityId === F)))
         for (const alt of OPEN) {
