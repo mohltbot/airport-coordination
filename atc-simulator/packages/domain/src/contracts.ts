@@ -68,7 +68,7 @@ export const RunConfigSchema = z.strictObject({
     airportNetwork: z.enum(["US", "LEGACY"]).optional(),
     continuousTraffic: z.boolean().optional(),
     // Bay Area demo (team decision 2026-10-31). All optional; absent keeps earlier behaviour.
-    focusRegion: z.enum(["BAY_AREA"]).nullable().optional(),
+    focusRegion: z.enum(["BAY_AREA", "NYC"]).nullable().optional(),
     emergencyCandidateMode: z.enum(["PARALLEL", "SEQUENTIAL"]).optional(),
     featuredFlightId: z.string().min(1).max(32).nullable().optional(),
     // Demo preset: smoke landing deadline in sim seconds (default SMOKE_DEADLINE_SEC = 900) so
