@@ -86,7 +86,7 @@ class Nyc {
 }
 
 describe("NYC placement", () => {
-    test("8 flights, 6 inbound to JFK and 2 to LGA, inside the New York view, ENROUTE NORMAL 240 kt, fuel >= 3600 s", () => {
+    test("8 flights, 6 inbound to JFK and 2 to LGA, inside the arrival envelope, ENROUTE NORMAL 240 kt, fuel >= 3600 s", () => {
         const w = createWorld(nycConfig(), { runId, operationId: "op" })
         expect(w).toEqual(createWorld(nycConfig(), { runId, operationId: "op" }))
         expect(w.flights.map(f => f.flightId)).toEqual(["F001", "F002", "F003", "F004", "F005", "F006", "F007", "F008"])
@@ -173,6 +173,9 @@ test("four-flight NYC demo approaches from distinct bearings without immediate h
     const w = createWorld(nycConfig({ flightCount: 4 }), { runId, operationId: "approaches" });
     expect(w.flights.map(f => f.originalDestination)).toEqual(["JFK", "JFK", "JFK", "LGA"]);
     expect(new Set(w.flights.map(f => Math.floor(f.headingDeg / 30))).size).toBe(4);
+    const distances = w.flights.map(f => distanceNm(f.position, position(f.originalDestination)));
+    expect(Math.max(...distances) - Math.min(...distances)).toBeGreaterThan(14);
+    expect(new Set(distances.map(d => Math.floor(d / 5))).size).toBe(4);
     for (const f of w.flights) {
         const next = simulateMotion(f, 0, 60);
         expect(next.phase).toBe("ENROUTE");

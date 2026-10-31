@@ -17,7 +17,7 @@ export function NationalAirspaceMap({ snapshot, selectedId, onSelect, stale }: P
   const [viewCenter, setViewCenter] = useState<Point | null>(null);
   const drag = useRef<{ pointerId: number; x: number; y: number; center: Point; moved: boolean } | null>(null);
   const suppressClick = useRef(false);
-  useEffect(() => { setZoom(bayArea ? 3.5 : newYork ? 3.5 : 1); setViewCenter(bayArea ? projectUs(-122.0, 37.2) : newYork ? projectUs(-74.0, 40.7) : null); setRegionName(bayArea ? "bay" : newYork ? "northeast" : "network"); }, [snapshot.runId, bayArea, newYork]);
+  useEffect(() => { setZoom(bayArea ? 3.5 : newYork ? 5 : 1); setViewCenter(bayArea ? projectUs(-122.0, 37.2) : newYork ? projectUs(-74.0, 40.7) : null); setRegionName(bayArea ? "bay" : newYork ? "northeast" : "network"); }, [snapshot.runId, bayArea, newYork]);
   const [size, setSize] = useState({ width: 800, height: 520 });
   const [positions, setPositions] = useState<Record<string, Point>>(() => Object.fromEntries(snapshot.flights.map(f => [f.entityId, f.position])));
   useEffect(() => {
@@ -62,7 +62,7 @@ export function NationalAirspaceMap({ snapshot, selectedId, onSelect, stale }: P
   const fit = () => { setZoom(1); setViewCenter(null); setRegionName("network"); };
   const region = (name: string) => {
     if (name === "network") { fit(); return; }
-    const target = name === "bay" ? { lon: -122.0, lat: 37.2, zoom: 3.5 } : name === "northeast" ? { lon: -74.0, lat: 40.7, zoom: 3.5 } : { lon: -115, lat: 34, zoom: 3 };
+    const target = name === "bay" ? { lon: -122.0, lat: 37.2, zoom: 3.5 } : name === "northeast" ? { lon: -74.0, lat: 40.7, zoom: 5 } : { lon: -115, lat: 34, zoom: 3 };
     setRegionName(name); setViewCenter(projectUs(target.lon, target.lat)); setZoom(target.zoom);
   };
   const select = (id: string) => { if (!suppressClick.current) onSelect(id); };
