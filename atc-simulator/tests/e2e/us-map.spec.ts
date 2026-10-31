@@ -63,3 +63,20 @@ test('Bay Area demo highlights the configured flight and opens its radio exchang
   await expect(page.locator('.featured-flight-link')).toHaveCount(0);
   await expect(page.locator('.featured-flight-badge')).toHaveCount(0);
 });
+
+
+test('national view hides flight badges and airport labels only show codes', async ({ page }) => {
+  const snapshot = structuredClone(usPreviewSnapshot);
+  const airport = snapshot.airports.find(a => a.airportId === 'SFO')!;
+  snapshot.flights[0]!.position = { x: airport.position.x - 2, y: airport.position.y + 2 };
+  const h = await harness(page, bootstrap(snapshot, 'VIEWER'));
+  await h.open('/');
+  await expect(page.locator('.national-label:not(.is-airport)')).toHaveCount(0);
+  await expect(page.locator('.national-label-city')).toHaveCount(0);
+  await expect(page.locator('.national-aircraft')).toHaveCount(snapshot.flights.length);
+  await page.getByLabel('Map region').selectOption('bay');
+  await expect(page.locator('.national-label:not(.is-airport)').filter({hasText: snapshot.flights[0]!.callsign})).toBeVisible();
+  await expect(page.locator('.national-label-city')).toHaveCount(0);
+  await page.getByRole('button', {name:'Reset map view'}).click();
+  await expect(page.locator('.national-label:not(.is-airport)')).toHaveCount(0);
+});
