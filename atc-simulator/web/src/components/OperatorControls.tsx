@@ -36,7 +36,11 @@ export function RunSetup() {
     sim.busy || (!!phase && !["CONFIGURING", "STARTING"].includes(phase));
   const unavailable =
     sim.snapshot &&
-    (["actors", "relay", "worker"] as const).some(
+    // A new run has no worker projection until initialization has started.
+    // The actors service is the dependency needed to perform that initialization.
+    (["CONFIGURING", "STARTING"].includes(phase ?? "")
+      ? (["actors"] as const)
+      : (["actors", "relay", "worker"] as const)).some(
       (k) => sim.snapshot!.health[k].status === "UNAVAILABLE",
     );
   const start = async () => {
