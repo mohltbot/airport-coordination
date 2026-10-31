@@ -12,7 +12,7 @@ Background #10161C; panels #18222C; primary text #F3F6F8; secondary #A9B7C4; bor
 
 ## Behavior
 
-Map is geometry, not decoration. Solid lines mean confirmed assignments, dashed lines mean proposals, revocations briefly crossed then removed; closed airport markers are hatched and labeled. Selection survives snapshot replacement. Draw only between authoritative positions and stop animation on stale data. Respect reduced motion. Animation never changes model state.
+Map is geometry, not decoration. Per the user's presentation update, light cyan dotted lines connect every nonterminal flight with a confirmed assignment to its assigned airport. Selecting a flight brightens its line; selecting an airport brightens its incoming assigned lines. Flights without an assignment get no destination line. Selected-flight proposals use amber long dashes and an explicit unconfirmed legend; revocations briefly cross then disappear. This replaces the original spec's solid-confirmed-line convention. Closed airport markers are hatched and labeled. Selection survives snapshot replacement. Draw only between authoritative positions and stop animation on stale data. Respect reduced motion. Animation never changes model state.
 
 Show connection freshness, transport/application distinction, dependency health, and real model/rules-fallback source. Never turn HTTP 202 into an active incident. Per-incident resolve controls preserve independent overlaps and explain that low-fuel clearing does not refill fuel. No secret appears in browser logs. /join exchanges and removes the capability fragment.
 

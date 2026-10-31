@@ -243,6 +243,32 @@ export function AirspaceMap({ snapshot, selectedId, onSelect, stale }: Props) {
           </pattern>
         </defs>
         <rect width="240" height="160" fill="url(#airspace-grid)" />
+        <g className="map-assignments">
+          {snapshot.flights.map((flight) => {
+            if (!flight.activeAssignment || ["LANDED", "UNRESOLVED"].includes(flight.phase)) return null;
+            const airport = snapshot.airports.find(
+              (candidate) => candidate.airportId === flight.activeAssignment!.airportId,
+            );
+            if (!airport) return null;
+            const position = positions[flight.entityId] ?? flight.position;
+            const highlighted = selectedId === flight.entityId || selectedId === airport.entityId;
+            return (
+              <line
+                key={flight.entityId}
+                className={`map-assignment${highlighted ? " map-assignment-selected" : ""}`}
+                data-flight-id={flight.flightId}
+                data-airport-id={airport.airportId}
+                x1={position.x}
+                y1={position.y}
+                x2={airport.position.x}
+                y2={airport.position.y}
+                vectorEffect="non-scaling-stroke"
+              >
+                <title>{flight.callsign} → {airport.airportId}: assigned destination</title>
+              </line>
+            );
+          })}
+        </g>
         {selected && (
           <g className="map-routes">
             {selected.proposals.map((p) => {
@@ -262,27 +288,6 @@ export function AirspaceMap({ snapshot, selectedId, onSelect, stale }: Props) {
                 )
               );
             })}
-            {selected.activeAssignment &&
-              (() => {
-                const a = snapshot.airports.find(
-                  (a) => a.airportId === selected.activeAssignment?.airportId,
-                );
-                return (
-                  a && (
-                    <line
-                      className="map-confirmed"
-                      x1={
-                        positions[selected.entityId]?.x ?? selected.position.x
-                      }
-                      y1={
-                        positions[selected.entityId]?.y ?? selected.position.y
-                      }
-                      x2={a.position.x}
-                      y2={a.position.y}
-                    />
-                  )
-                );
-              })()}
             {revocations.map((e) => {
               const airportId = [e.fromEntityId, e.toEntityId].find((id) =>
                 id?.startsWith("airport:"),
@@ -406,8 +411,8 @@ export function AirspaceMap({ snapshot, selectedId, onSelect, stale }: Props) {
         ))}
       </svg>
       <div className="map-legend">
-        <span>━ Confirmed</span>
-        <span>┄ Proposal</span>
+        <span><svg width="26" height="12" aria-hidden="true"><line x1="1" y1="6" x2="25" y2="6" className="map-assignment map-assignment-selected" /></svg> Assigned destination</span>
+        <span><svg width="26" height="12" aria-hidden="true"><line x1="1" y1="6" x2="25" y2="6" stroke="var(--amber)" strokeWidth="1.2" strokeDasharray="6 4" /></svg> Offer · unconfirmed</span>
         <span>⊠ Closed</span>
         <span>▲ Aircraft</span>
       </div>
