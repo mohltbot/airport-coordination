@@ -60,6 +60,24 @@ The featured flight's callsign changes every run because it is a live flight. Re
 
 About 230 spoken words. Touchdown lands just after 2:00 at 10x; if the 12 s booking budget passes its 3 test runs, touchdown moves inside 2:00.
 
+## NYC weather
+
+```bash
+cd atc-simulator && bun run demo:nyc-weather -- --settle-sec 15
+```
+
+It resets the run, creates a New York run at 10x (live OpenSky callsigns), resumes, waits until JFK has confirmed bookings or 15 s pass, then sends WEATHER_CLOSED to airport:JFK through the command path. LGA and EWR stay open. `--weather-on-enter` pauses the run after the settle and closes JFK when Enter is pressed. `--no-incidents` leaves the closure to the phone. The UI zooms to the Northeast view by itself.
+
+| Screen | Say |
+|---|---|
+| New York view, planes around JFK and LaGuardia | "Real callsigns inbound to JFK and LaGuardia. Each plane and each tower is its own agent." |
+| JFK goes CLOSED | "Weather just closed JFK." |
+| Radio log: revoked, refused, offers | "JFK cancels the slots it had confirmed and refuses everyone still asking. Every JFK flight asks LaGuardia and Newark at once." |
+| EWR confirms, slots in pairs | "LaGuardia is already busy, so Newark offers earlier slots. It has two runways, so it lands them two at a time, 90 seconds apart." |
+| Landings at EWR | "Every plane that was going to JFK is down at Newark." |
+
+Measured on run 37a4e1c2 (8 flights, 6 bound for JFK): JFK closed 1.2 s after the submit, revocations and refusals at 0.4 s, first EWR confirm at 6.3 s, all six confirmed at EWR by 15.1 s, landings at EWR at 89, 128 and 164 s (two per wave). The placement is being changed (inbound angles, maybe 4 flights), so measure again before quoting these.
+
 ## If something fails
 
 - Model slow: decisions show RULES_FALLBACK with a label. Say so plainly and keep narrating.
