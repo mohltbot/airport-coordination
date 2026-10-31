@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { RUNWAY_OCCUPANCY_SEC, US_AIRPORTS } from "../../packages/domain/src/constants.ts"
 import type { AirportId, AirportState, FlightState, ProtocolEnvelope, RunConfig } from "../../packages/domain/src/contracts.ts"
+import { simulateMotion } from "../../packages/domain/src/flight.ts"
 import { distanceNm } from "../../packages/domain/src/geometry.ts"
 import { applyIncident } from "../../packages/domain/src/incidents.ts"
 import { applyLiveTraffic } from "../../packages/domain/src/live-traffic.ts"
@@ -167,3 +168,15 @@ describe("NYC weather diversion", () => {
         expect(planCandidates(f, "CLOSURE", n.ctx())).toContain("EWR")
     })
 })
+
+test("four-flight NYC demo approaches from distinct bearings without immediate holding", () => {
+    const w = createWorld(nycConfig({ flightCount: 4 }), { runId, operationId: "approaches" });
+    expect(w.flights.map(f => f.originalDestination)).toEqual(["JFK", "JFK", "JFK", "LGA"]);
+    expect(new Set(w.flights.map(f => Math.floor(f.headingDeg / 30))).size).toBe(4);
+    for (const f of w.flights) {
+        const next = simulateMotion(f, 0, 60);
+        expect(next.phase).toBe("ENROUTE");
+        expect(next.holdCenter).toBeNull();
+        expect(distanceNm(next.position, position(f.originalDestination))).toBeCloseTo(distanceNm(f.position, position(f.originalDestination)) - 4, 5);
+    }
+});

@@ -12,11 +12,10 @@ export const NYC_CLOSED: AirportId = "JFK"
 export const NYC_ALTERNATE: AirportId = "EWR"
 // Flight i (0-based) flies to LGA when i % 4 === 3, so 8 flights are 6 to JFK and 2 to LGA.
 export const nycDestination = (index: number): AirportId => (index % 4 === 3 ? "LGA" : "JFK")
-// Visible box at the UI's Northeast zoom (14x around 74.0 W, 40.7 N), in simulation coordinates (+y is south).
-export const NYC_BOX = { minX: 191.5, maxX: 205, minY: 55.5, maxY: 65.5 } as const
-// Inside the 6 NM approach ring, so each flight orbits its destination until cleared: the weather
-// closure then lands before most slots, and LGA and EWR (0.7 and 1.5 NM from JFK) stay short hops.
-export const NYC_SPAWN_NM = { min: 3.5, max: 5.5 } as const
+// Visible box at the UI's wider Northeast zoom (3.5x around 74.0 W, 40.7 N), in simulation coordinates (+y is south).
+export const NYC_BOX = { minX: 174, maxX: 223, minY: 36, maxY: 84 } as const
+// Start well outside the approach ring: arrivals fly inbound while towers negotiate slots.
+export const NYC_SPAWN_NM = { min: 18, max: 22 } as const
 export const NYC_FUEL_BASE_SEC = 3600
 export const NYC_FUEL_RANGE_SEC = 900
 
@@ -34,14 +33,14 @@ function rng(seed: number): () => number {
 
 const inBox = (p: Point) => p.x >= NYC_BOX.minX && p.x <= NYC_BOX.maxX && p.y >= NYC_BOX.minY && p.y <= NYC_BOX.maxY
 
-function spawnNear(destination: Point, rand: () => number): Point {
+function spawnNear(destination: Point, rand: () => number, index: number): Point {
     const ewr = airport(NYC_ALTERNATE).position
     for (let attempt = 0; attempt < 64; attempt++) {
-        const p = polarOffset(destination, 2 * Math.PI * rand(), NYC_SPAWN_NM.min + (NYC_SPAWN_NM.max - NYC_SPAWN_NM.min) * rand())
+        const p = polarOffset(destination, (-2.9 + (index * .9) % 3.3) + (rand() - .5) * .1, NYC_SPAWN_NM.min + (NYC_SPAWN_NM.max - NYC_SPAWN_NM.min) * rand())
         // Keep ordinary traffic off the top of Newark so the diversion reads on the map.
         if (inBox(p) && distanceNm(p, ewr) >= 2) return p
     }
-    return { x: destination.x + 4, y: destination.y }
+    return { x: destination.x + NYC_SPAWN_NM.min, y: destination.y }
 }
 
 export const isNycFocus = (config: Pick<RunConfig, "airportNetwork" | "focusRegion" | "continuousTraffic">): boolean =>
@@ -53,7 +52,7 @@ export function placeNycFlights(config: RunConfig, flights: readonly FlightState
     return flights.map((f, i) => {
         const destId = nycDestination(i)
         const dest = airport(destId).position
-        const position = spawnNear(dest, rand)
+        const position = spawnNear(dest, rand, i)
         return {
             ...f,
             originalDestination: destId,

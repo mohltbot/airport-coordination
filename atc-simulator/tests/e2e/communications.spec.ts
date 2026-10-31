@@ -12,6 +12,7 @@ test('communications scope, thread grouping, counterpart filtering and full rece
   const h = await harness(page, bootstrap(snapshot, 'VIEWER')); await h.open('/');
   await page.locator('.fleet-flight').filter({ hasText: flight.callsign }).click();
   await expect(page.getByRole('tab', { name: 'Communications', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await page.getByRole('button', { name: 'Show full log', exact: true }).click();
   await expect(page.locator('.comm-message')).toHaveCount(17);
   await expect(page.locator('.comm-content').getByText('Recorded summary 0', { exact: true })).toHaveCount(1);
   await expect(page.locator('.comm-content').getByText('Unrelated activity', { exact: true })).toHaveCount(0);
@@ -61,4 +62,18 @@ test('expired counterpart filter returns to all when recent history advances', a
   await expect(page.getByLabel('Conversation with')).toHaveValue('all');
   await expect(page.locator('.comm-message')).toHaveCount(1);
   await expect(page.locator('.comm-content')).toContainText('Remaining counterpart summary');
+});
+
+test('highlights cap radio messages and hide internal decisions until full log is requested', async ({ page }) => {
+  const snapshot = fixture(); const f=snapshot.flights[0]!, a=snapshot.airports[0]!;
+  const event = {eventId:'radio', simTimeSec:0, wallTimeMs:snapshot.serverWallTimeMs, fromEntityId:f.entityId, toEntityId:a.entityId, type:'LANDING_REQUEST', summary:'Tower, requesting landing.', status:'APPLIED' as const, source:'SYSTEM' as const, correlationId:null};
+  snapshot.timeline=Array.from({length:20},(_,i)=>({...event,eventId:`radio-${i}`,wallTimeMs:event.wallTimeMs+i}));
+  snapshot.timeline.push({...event,eventId:'internal',type:'PROPOSE_OFFER',toEntityId:null,summary:'Internal reasoning detail'});
+  const h=await harness(page,bootstrap(snapshot,'VIEWER')); await h.open('/');
+  await page.locator('.fleet-flight').filter({hasText:f.callsign}).click();
+  await expect(page.locator('.comm-message')).toHaveCount(8);
+  await expect(page.locator('.comm-content').getByText('Internal reasoning detail',{exact:true})).toHaveCount(0);
+  await page.getByRole('button',{name:'Show full log',exact:true}).click();
+  await expect(page.locator('.comm-message')).toHaveCount(21);
+  await expect(page.locator('.comm-content').getByText('Internal reasoning detail',{exact:true})).toBeVisible();
 });
