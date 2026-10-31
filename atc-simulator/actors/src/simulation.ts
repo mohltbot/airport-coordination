@@ -97,7 +97,18 @@ export function createRun(root: SimulationRootState, requestId: string, config: 
     if (current && current.phase !== "CONFIGURING" && current.phase !== "COMPLETED") {
         throw new RunError("WRONG_PHASE", `active run is ${current.phase}; reset it first`)
     }
-    if (current) next = withRun(next, logEvent({ ...current, fencedAtWallMs: nowMs, workerLease: null }, nowMs, "RUN_SUPERSEDED", "Superseded by a new run", requestId))
+    // Agreed API rule: configuring again while CONFIGURING edits that run in place (same runId).
+    if (current && current.phase === "CONFIGURING") {
+        const edited = logEvent(
+            { ...current, config: cfg, entities: registrations(current.runId, cfg.flightCount) },
+            nowMs,
+            "CONFIG_UPDATED",
+            `Configured ${cfg.flightCount} flights, seed ${cfg.seed}, ${cfg.speed}x`,
+            requestId,
+        )
+        next = withRun({ ...next, createRequests: { ...next.createRequests, [requestId]: current.runId } }, edited)
+        return { root: next, run: edited }
+    }
     const run = newRun(runId, requestId, cfg, nowMs, current?.workerEpoch ?? 0)
     next = withRun({ ...next, activeRunId: runId, createRequests: { ...next.createRequests, [requestId]: runId } }, run)
     return { root: next, run }
