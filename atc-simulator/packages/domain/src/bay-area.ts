@@ -6,9 +6,9 @@ import type { AirportId, FlightState, InitialWorld, Point, RunConfig } from "./c
 import { distanceNm, headingDeg, polarOffset } from "./geometry.js"
 
 export const BAY_AREA_DESTINATIONS = ["SFO", "OAK", "SJC"] as const satisfies readonly AirportId[]
-// Visible box at the UI's Bay Area zoom, in simulation coordinates (+y is south).
-export const BAY_AREA_BOX = { minX: 15, maxX: 31, minY: 68, maxY: 88 } as const
-export const BAY_AREA_SPAWN_NM = { min: 4, max: 9 } as const
+// Wider Bay Area arrival view, in simulation coordinates (+y is south).
+export const BAY_AREA_BOX = { minX: 3, maxX: 43, minY: 52, maxY: 94 } as const
+export const BAY_AREA_SPAWN_NM = { min: 12, max: 18 } as const
 // Ordinary traffic keeps clear of Monterey so the featured flight's emergency is the story there.
 export const MRY_CLEARANCE_NM = 3
 // Featured flight: 8 sim NM south of Monterey, inbound to SFO. Nearest airports from here are
@@ -31,14 +31,16 @@ function rng(seed: number): () => number {
 
 const inBox = (p: Point) => p.x >= BAY_AREA_BOX.minX && p.x <= BAY_AREA_BOX.maxX && p.y >= BAY_AREA_BOX.minY && p.y <= BAY_AREA_BOX.maxY
 
-function spawnNear(destination: Point, rand: () => number): Point {
+function spawnNear(destination: Point, rand: () => number, index: number): Point {
     const mry = airport("MRY").position
+    // Spread arrivals around the compass instead of spawning inside the holding ring.
+    const bearing = index * Math.PI * (3 - Math.sqrt(5)) + (rand() - .5) * .35
     for (let attempt = 0; attempt < 64; attempt++) {
-        const p = polarOffset(destination, 2 * Math.PI * rand(), BAY_AREA_SPAWN_NM.min + (BAY_AREA_SPAWN_NM.max - BAY_AREA_SPAWN_NM.min) * rand())
+        const p = polarOffset(destination, bearing + attempt * .2, BAY_AREA_SPAWN_NM.min + (BAY_AREA_SPAWN_NM.max - BAY_AREA_SPAWN_NM.min) * rand())
         if (inBox(p) && distanceNm(p, mry) >= MRY_CLEARANCE_NM) return p
     }
-    // Deterministic fallback: due north-west of the destination, inside the box.
-    return { x: destination.x - 4, y: Math.max(BAY_AREA_BOX.minY, destination.y - 4) }
+    // Due east remains outside the holding boundary and inside the arrival view.
+    return { x: destination.x + BAY_AREA_SPAWN_NM.min, y: destination.y }
 }
 
 // Re-place a US world's flights around SFO/OAK/SJC (never MRY) with the featured flight south of MRY.
@@ -59,7 +61,7 @@ export function placeBayAreaFlights(config: RunConfig, flights: readonly FlightS
         }
         const destId = BAY_AREA_DESTINATIONS[ordinary++ % BAY_AREA_DESTINATIONS.length]!
         const dest = airport(destId).position
-        const position = spawnNear(dest, rand)
+        const position = spawnNear(dest, rand, ordinary - 1)
         return {
             ...f,
             originalDestination: destId,

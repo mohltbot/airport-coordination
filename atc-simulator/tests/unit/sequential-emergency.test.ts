@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { US_AIRPORTS } from "../../packages/domain/src/constants.ts"
 import type { AirportId, AirportState, FlightState, ProtocolEnvelope, RunConfig } from "../../packages/domain/src/contracts.ts"
-import { BAY_AREA_DESTINATIONS, FEATURED_POSITION, MRY_CLEARANCE_NM } from "../../packages/domain/src/bay-area.ts"
+import { BAY_AREA_DESTINATIONS, BAY_AREA_BOX, BAY_AREA_SPAWN_NM, FEATURED_POSITION, MRY_CLEARANCE_NM } from "../../packages/domain/src/bay-area.ts"
+import { simulateMotion } from "../../packages/domain/src/flight.ts"
 import { distanceNm } from "../../packages/domain/src/geometry.ts"
 import { applyIncident } from "../../packages/domain/src/incidents.ts"
 import {
@@ -128,13 +129,22 @@ describe("Bay Area placement", () => {
         const b = new Bay()
         const others = Object.values(b.flights).filter(f => f.flightId !== "F001")
         expect(others).toHaveLength(9)
+        expect(new Set(others.map(f => Math.floor(f.headingDeg / 90))).size).toBe(4)
         for (const f of others) {
             expect(BAY_AREA_DESTINATIONS as readonly string[]).toContain(f.originalDestination)
             const d = distanceNm(f.position, position(f.originalDestination))
-            expect(d).toBeGreaterThanOrEqual(3.99)
-            expect(d).toBeLessThanOrEqual(9.01)
+            expect(d).toBeGreaterThanOrEqual(BAY_AREA_SPAWN_NM.min - .01)
+            expect(d).toBeLessThanOrEqual(BAY_AREA_SPAWN_NM.max + .01)
             expect(distanceNm(f.position, position("MRY"))).toBeGreaterThanOrEqual(MRY_CLEARANCE_NM)
             expect(f.fuelRemainingSec).toBeGreaterThanOrEqual(3600)
+            expect(f.position.x).toBeGreaterThanOrEqual(BAY_AREA_BOX.minX)
+            expect(f.position.x).toBeLessThanOrEqual(BAY_AREA_BOX.maxX)
+            expect(f.position.y).toBeGreaterThanOrEqual(BAY_AREA_BOX.minY)
+            expect(f.position.y).toBeLessThanOrEqual(BAY_AREA_BOX.maxY)
+            const next = simulateMotion(f, 0, 60)
+            expect(next.phase).toBe("ENROUTE")
+            expect(next.holdCenter).toBeNull()
+            expect(distanceNm(next.position, position(f.originalDestination))).toBeCloseTo(d - 4, 5)
         }
     })
 
