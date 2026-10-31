@@ -92,3 +92,14 @@ test('national view hides flight badges and airport labels only show codes', asy
   await page.getByRole('button', { name: 'Select EWR', exact: true }).click();
   await expect(page.locator('.inspector-header')).toContainText('Newark Liberty International Airport');
  });
+
+ test('NYC runs automatically focus New York and preserve manual map selection', async ({ page }) => {
+  const snapshot = structuredClone(usPreviewSnapshot); snapshot.config.focusRegion = 'NYC';
+  const h = await harness(page, bootstrap(snapshot, 'VIEWER')); await h.open('/');
+  await expect(page.getByLabel('Map region')).toHaveValue('northeast');
+  await expect(page.getByRole('button', { name: 'Select EWR', exact: true })).toBeVisible();
+  await page.getByLabel('Map region').selectOption('network');
+  const next = structuredClone(snapshot); next.projectionVersion++;
+  await h.emit('snapshot', next);
+  await expect(page.getByLabel('Map region')).toHaveValue('network');
+ });

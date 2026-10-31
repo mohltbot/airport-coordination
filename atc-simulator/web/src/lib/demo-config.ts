@@ -3,5 +3,5 @@ import type { PublicSnapshot } from '@ghost-tower/domain/public';
 export function demoConfig(snapshot: PublicSnapshot) {
   const config = snapshot.config;
   const featured = snapshot.flights.find(f => f.flightId === config.featuredFlightId || f.entityId === config.featuredFlightId);
-  return { bayArea: config.focusRegion === 'BAY_AREA', featured };
+  return { bayArea: config.focusRegion === 'BAY_AREA', newYork: config.focusRegion === 'NYC', featured };
 }

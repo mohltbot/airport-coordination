@@ -9,7 +9,7 @@ type Point = { x: number; y: number };
 type Label = { id: string; x: number; y: number; width: number; height: number; point: Point; title: string; airport: boolean; emergency: boolean };
 
 export function NationalAirspaceMap({ snapshot, selectedId, onSelect, stale }: Props) {
-  const { bayArea, featured } = demoConfig(snapshot);
+  const { bayArea, newYork, featured } = demoConfig(snapshot);
   const svgRef = useRef<SVGSVGElement>(null);
   const previous = useRef(snapshot);
   const [zoom, setZoom] = useState(1);
@@ -17,7 +17,7 @@ export function NationalAirspaceMap({ snapshot, selectedId, onSelect, stale }: P
   const [viewCenter, setViewCenter] = useState<Point | null>(null);
   const drag = useRef<{ pointerId: number; x: number; y: number; center: Point; moved: boolean } | null>(null);
   const suppressClick = useRef(false);
-  useEffect(() => { setZoom(bayArea ? 7 : 1); setViewCenter(bayArea ? projectUs(-122.0, 37.2) : null); setRegionName(bayArea ? "bay" : "network"); }, [snapshot.runId, bayArea]);
+  useEffect(() => { setZoom(bayArea ? 7 : newYork ? 14 : 1); setViewCenter(bayArea ? projectUs(-122.0, 37.2) : newYork ? projectUs(-74.0, 40.7) : null); setRegionName(bayArea ? "bay" : newYork ? "northeast" : "network"); }, [snapshot.runId, bayArea, newYork]);
   const [size, setSize] = useState({ width: 800, height: 520 });
   const [positions, setPositions] = useState<Record<string, Point>>(() => Object.fromEntries(snapshot.flights.map(f => [f.entityId, f.position])));
   useEffect(() => {
