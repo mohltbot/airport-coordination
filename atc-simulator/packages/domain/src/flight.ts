@@ -417,3 +417,20 @@ export function recordFlightTouchdown(state: FlightState, receipt: TouchdownRece
     }
     return { state: next, result: applied(next) }
 }
+
+// ---------------------------------------------------------------- worker fencing
+
+// Every worker mutation carries (runId, epoch, token). A newer epoch is adopted
+// and permanently rejects older ones; the same epoch must present the same token.
+// Returns the state with the adopted fence, or a rejection code.
+export function checkFence<S extends { runId: string; fencing: FlightState["fencing"] }>(
+    state: S,
+    context: Pick<MutationContext, "runId" | "workerEpoch" | "leaseToken">,
+): { state: S; code: null } | { state: S; code: "WRONG_RUN" | "INVALID_LEASE" } {
+    if (context.runId !== state.runId) return { state, code: "WRONG_RUN" }
+    const f = state.fencing
+    if (context.workerEpoch < f.workerEpoch) return { state, code: "INVALID_LEASE" }
+    if (context.workerEpoch === f.workerEpoch && f.leaseToken !== null && f.leaseToken !== context.leaseToken) return { state, code: "INVALID_LEASE" }
+    if (context.workerEpoch === f.workerEpoch && f.leaseToken === context.leaseToken) return { state, code: null }
+    return { state: { ...state, fencing: { workerEpoch: context.workerEpoch, leaseToken: context.leaseToken } }, code: null }
+}
