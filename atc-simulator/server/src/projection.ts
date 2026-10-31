@@ -167,7 +167,7 @@ type PublisherSim = {
  */
 export function createWorkerPublisher(deps: { repo: WorkerRepository; env: Record<string, string | undefined>; relayHealth?: () => DependencyHealth }) {
     const { repo, env } = deps
-    const agentMode = env.AGENT_MODE?.trim().toLowerCase() === "live" ? ("live" as const) : ("rules" as const)
+    const requestedLive = env.AGENT_MODE?.trim().toLowerCase() === "live"
     const relayConfigured = Boolean(env.RELAY_BASE_URL?.trim() && env.RELAY_WORKSPACE_KEY?.trim())
     const modelConfigured = Boolean(env.OPENAI_API_KEY?.trim() && env.OPENAI_MODEL?.trim())
     const sim = repo.simulation as unknown as PublisherSim
@@ -186,6 +186,9 @@ export function createWorkerPublisher(deps: { repo: WorkerRepository; env: Recor
             )
             const { workerHealth } = await import("./simulation/worker.ts")
             const worker = workerHealth(status)
+            // What the actors run, not what the worker was asked for: a run whose entities have
+            // not accepted JOB mode is still deciding by rules.
+            const agentMode = status.decisionMode === "JOB" ? ("live" as const) : ("rules" as const)
             const snapshot = buildPublicSnapshot({
                 run,
                 airports: states.filter((s): s is AirportState => s.entityId.startsWith("airport:")),
@@ -202,7 +205,7 @@ export function createWorkerPublisher(deps: { repo: WorkerRepository; env: Recor
                           : (deps.relayHealth?.() ?? { status: "READY", detail: null }),
                     model:
                         agentMode === "rules"
-                            ? { status: "DEGRADED", detail: "Rules mode" }
+                            ? { status: "DEGRADED", detail: requestedLive ? "Rules until every agent accepts live mode" : "Rules mode" }
                             : modelConfigured
                               ? { status: "READY", detail: env.OPENAI_MODEL?.trim() ?? null }
                               : { status: "UNAVAILABLE", detail: "Live mode needs OPENAI_API_KEY and OPENAI_MODEL" },

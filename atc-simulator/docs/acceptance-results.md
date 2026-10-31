@@ -1,6 +1,6 @@
 # Acceptance results
 
-Integration runs on 2026-10-31, 12:32 to 13:40 PT, on the build laptop (macOS arm64). Bun 1.4.4, Terse 0.14.9 local runtime on 127.0.0.1:7100, seed 20261031, speed 5x. Relay was hosted Agent Relay (cast.agentrelay.com, dedicated simulator workspace) until 13:30, then Agent Relay's local engine (`@relaycast/engine@12.3.0` on 127.0.0.1:8787, approved by Agent Relay for the demo) with the LOCAL timing profile.
+Integration runs on 2026-10-31, 12:32 to 14:01 PT, on the build laptop (macOS arm64). Bun 1.4.4, Terse 0.14.9 local runtime on 127.0.0.1:7100, seed 20261031, speed 5x. Relay was hosted Agent Relay (cast.agentrelay.com, dedicated simulator workspace) until 13:30, then Agent Relay's local engine (`@relaycast/engine@12.3.0` on 127.0.0.1:8787, approved by Agent Relay for the demo) with the LOCAL timing profile.
 
 Every run used the real path: the API gateway on :3000 in actor mode, the SimulationActor command ledger, the worker's Relay outbox, Relay, then the target AirportActor or FlightActor. No fixture data and no in-memory stand-in for Terse or Relay.
 
@@ -23,13 +23,15 @@ Command latencies run from the HTTP 202 to the state change in the public snapsh
 | Reset isolates the new run | PASS | Worker left the old lease with WRONG_RUN at the reset and claimed the new run |
 | US network (14 towers) initializes | PASS | Runs ed4c9e6c, e1189ee6, 21665363, 2ff45d99: 10, 13, 13 and 14 airports in the snapshot |
 | Live OpenSky callsigns | PASS | Run 2ff45d99: "[opensky] fetched 3345 airborne airline flights", callsigns UAL1160, AAL1492, SWA3473, DAL1070, config.liveTraffic set |
-| Live model decisions | PASS | Run 21665363, gpt-5.4-mini: 18 ATC proposals from the model; pilots 4 from the model, 3 labeled RULES_FALLBACK |
+| Live model decisions | PASS | Run 21665363 (hosted): 18 ATC proposals from the model; pilots 4 from the model, 3 labeled RULES_FALLBACK. Bay runs b08768c0 and 955823f7 (local engine): every featured-flight and tower offer decision from the model |
+| Bay Area demo with live model, local engine | PASS | 5x: smoke to touchdown 217.5 s. 10x: 138.0 s. MRY refused in under 2 s, SJC confirmed in 5.5 to 7.3 s |
 | Worker crash (SIGKILL) mid-run | PASS | Running again 11 s later on a new epoch; state unchanged while no worker ran |
 | Actor runtime restart mid-run | PASS | 29 s outage; sim time, tick and every flight's revision, position, fuel and assignment identical afterwards; no catch-up jump |
 | Health is truthful | PASS | Actors UNAVAILABLE during the runtime outage; relay DEGRADED with failure counts on hosted; READY "Agent Relay (local engine)" after the switch |
 | 10 flights on hosted Relay | FAIL | Hosted Relay saturated: 429 workspace_busy, 429 workspace_delivery_depth_exceeded, 503 database_overloaded; hops p50 20 s, max 108 s |
-| Continuous traffic: landing then replacement departure | NOT RUN | Hosted runs never reached a landing; the local run was reset for the Bay demo first |
-| Weather and smoke on the local engine | NOT RUN | Waiting for the floor after the Bay demo |
+| Continuous traffic: landing then replacement departure | PASS | Run 766d9e7a, local engine, 10x, rules: F007 LANDED 13:54:28; replacement F011 departed 6 s later, booked SFO and LANDED 13:55:07; F012 TAP239 SJC to OAK followed |
+| Smoke on cue (`--smoke-on-enter`) | PASS | Run db0e4302: prompt, Enter, position re-check, SMOKE; touchdown 72 s later |
+| Weather closure with diversions at 10 flights, local engine | NOT RUN | |
 | `bun run test:integration`, `test:e2e`, `test:live` | NOT RUN | Unit tests (183) and the simulation and recovery integration files (15) pass |
 
 ## Relay: hosted against local engine
@@ -91,6 +93,38 @@ Config: US network, focusRegion BAY_AREA, emergencyCandidateMode SEQUENTIAL, fea
 | SJC confirms R2 | 13:31:07 |
 | SJC clears F001 to land in its window | 13:35:15 |
 
+## Bay Area demo with live model decisions, local engine
+
+`bun run demo:bay-emergency -- --speed 5|10 --flights 10 --featured F001`, worker `AGENT_MODE=live bun run worker:local-relay` (LIVE_LOCAL timing), gpt-5.4-mini. Seconds after the SMOKE submit:
+
+| Step | 5x, run b08768c0 | 10x, run 955823f7 |
+|---|---|---|
+| Smoke applied | 2.4 | 1.3 |
+| Mayday to MRY | 1.6 | 1.4 |
+| MRY refuses ("runways R1 and R2 closed") | 1.9 | 1.6 |
+| Mayday to SJC | 2.8 | 2.1 |
+| SJC offers | 4.9 | 3.7 |
+| F001 accepts | 6.6 | 5.3 |
+| SJC confirms | 7.3 | 5.5 |
+| Clearance granted | 81.8 | 67.0 |
+| Touchdown at SJC | 217.5 | 138.0 |
+
+Decision sources in run b08768c0: SFO and SJC PROPOSE_OFFER, and F001's REQUEST_LANDING, two SELECT_OFFER and REQUEST_CLEARANCE, all MODEL. Example reasons: "SJC has a feasible offer and is the closest available landing option."; "Held slot is available on R1 at 330s, and arrivals are open." MRY's refusal is the closed-runway rule. Relay message IDs for the exchange: Mayday to MRY 242388723286163456, MRY refusal 242388726922625024, Mayday to SJC 242388728860393472, SJC offer 242388737320304640, accept 242388746107371520, SJC confirm 242388747600543744, clearance 242389059505766400.
+
+The earlier rules-mode Bay runs (4626010a, a9f85ce6) took 389 s from smoke to touchdown at 5x. A worker that claims a reset run before Start configured actors that did not exist yet, so they kept the HOSTED 450 s slot lead and rules decisions; 92e36b5 fixes it.
+
+LIVE_LOCAL booking budget 12 s (`RELAY_EXPECTED_BOOKING_WALL_SEC=12`, lead 120 sim s at 10x), live, 10x, seconds after the SMOKE:
+
+| Run | MRY refuses | SJC confirms | Clearance | Touchdown | Second round |
+|---|---|---|---|---|---|
+| db0e4302 (`--smoke-on-enter`) | 1.7 | 5.0 | 21.1 | 72.0 | no |
+| 65095f4f | 1.8 | 6.8 | 47.2 | 132.9 | no |
+| 6681d732 | 2.0 | 5.6 | | stopped for another run | no |
+
+The SJC slot was sim 330 in every run, so touchdown time depends on when the smoke goes in and on the tick rate.
+
+The effective sim rate is about 2x at the 5x setting and 2.8x at 10x, because the worker advances each of 24 entities with its own actor call every tick.
+
 ## Restarts (run 21665363, 13 US towers, hosted Relay)
 
 | Fault | Down | Recovery | State check |
@@ -124,6 +158,7 @@ The worker restarted with `AGENT_MODE=live` (JOB decision mode). The first ATC p
 | d6de424 | Relay event-log cursor persisted across worker restarts. |
 | ee90aae | Relay health from the last 60 s of sends and deliveries. |
 | 774c88d | `bun run relay:local` and `bun run worker:local-relay`: one-command switch to the local engine, hosted settings kept in .env. |
+| 92e36b5 | Configure retries until every actor exists (it was marked done on rejection); LIVE_LOCAL timing for the local engine with model decisions; agentMode and model health report the mode the actors accepted; flights keep acknowledged outbox entries so the pilot's own messages stay in the radio log. |
 
 `.env` (not committed) sets `RELAY_ACK_RETRY_BACKOFF_MS=15000,30000,60000` and `RELAY_ACK_RETRY_STEADY_MS=60000` for hosted. `.env.local-relay` sets the LOCAL schedule (500 ms to 4 s).
 
@@ -134,6 +169,7 @@ Merged and cherry-picked from codex/us-map: 1903697 (bd0b9fd), a12123e (0c040bf)
 ## Open
 
 - Continuous traffic landing followed by a replacement departure: not yet observed.
-- Weather and smoke rerun on the local engine at 10 flights.
+- Weather closure with diversions at 10 flights on the local engine.
+- Tick throughput: about 1.6 to 2.8 ticks a second at 24 entities, below the 4 Hz scheduler.
 - Full `test:integration`, `test:e2e` and `test:live` runs.
 - Physical-phone create and clear on the demo network (UI owner).

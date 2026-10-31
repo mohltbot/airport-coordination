@@ -14,7 +14,7 @@ import type {
     Tick,
     TouchdownReceipt,
 } from "@ghost-tower/domain/contracts"
-import { JOB_LEASE_MS, RELAY_TIMING } from "@ghost-tower/domain/constants"
+import { JOB_LEASE_MS, RELAY_TIMING, type NegotiationTimingOverrides, type TransportProfile } from "@ghost-tower/domain/constants"
 import { advanceFlight, applyApproachGuard, recordFlightTouchdown, type FlightHooks } from "../../packages/domain/src/flight.js"
 import {
     acknowledgeRelease,
@@ -118,7 +118,12 @@ export function receiveFlightStep(settings: object, current: FlightState | null,
     if (message.type === "DOMAIN_ACK") {
         const pid = message.payload.processedMessageId
         if (!f.state.outbox.some(e => e.envelope.messageId === pid)) return { state: null, result: { outcome: "APPLIED", code: "OK", stateRevision: current.stateRevision } }
-        const acked = acknowledgeRelease({ ...f.state, outbox: f.state.outbox.filter(e => e.envelope.messageId !== pid) }, pid)
+        // Keep acknowledged entries (the public timeline is projected from outboxes, and deleting
+        // them erased the pilot's own requests from the radio log); bound them to the newest 40.
+        const marked = f.state.outbox.map(e => (e.envelope.messageId === pid ? { ...e, acknowledged: true } : e))
+        const ackedIds = marked.filter(e => e.acknowledged).map(e => e.envelope.messageId)
+        const drop = new Set(ackedIds.slice(0, Math.max(0, ackedIds.length - 40)))
+        const acked = acknowledgeRelease({ ...f.state, outbox: marked.filter(e => !drop.has(e.envelope.messageId)) }, pid)
         return { state: acked, result: { outcome: "APPLIED", code: "OK", stateRevision: acked.stateRevision } }
     }
     const nctx = flightNegotiationCtx(settings, f.state, ctx)
@@ -197,10 +202,11 @@ export function touchdownStep(settings: object, current: FlightState | null, ctx
 
 // ---------------------------------------------------------------- settings and wall-clock timers
 
-export type FlightNegotiationOptions = { profile?: "HOSTED" | "LOCAL"; speed: 1 | 5 | 10; decisionMode?: DecisionMode }
+export type FlightNegotiationOptions = { profile?: TransportProfile; speed: 1 | 5 | 10; decisionMode?: DecisionMode; timing?: NegotiationTimingOverrides }
 
+// Profile values, with the worker's env overrides (e.g. RELAY_EXPECTED_BOOKING_WALL_SEC) on top.
 export function configuredTiming(options: FlightNegotiationOptions): NegotiationTiming {
-    return negotiationTiming(RELAY_TIMING[options.profile ?? "HOSTED"], options.speed)
+    return negotiationTiming({ ...RELAY_TIMING[options.profile ?? "HOSTED"], ...(options.timing ?? {}) }, options.speed)
 }
 
 // Collection deadline, acceptance status check and no-feasible retry fire on wall

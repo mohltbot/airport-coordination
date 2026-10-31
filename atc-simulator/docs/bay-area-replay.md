@@ -33,3 +33,9 @@ Create the run through the existing operator API with this config, then Start an
 Create no incidents during setup. From the phone, close MRY R1 and R2 before triggering SMOKE on F001 if the Monterey-refusal story is desired. Other Bay flights head to SFO, OAK and SJC. F001 starts south of Monterey, originally bound for SFO. Its displayed callsign can change with live callsign data; use F001 as the stable identifier.
 
 The placement is saved in `packages/domain/src/bay-area.ts`; the replay driver is `scripts/demo-bay-emergency.ts`. This preserves the repeatable setup, not a frozen copy of an old run or its historical messages.
+
+Saved command for the clean phone setup (no incidents, 8 flights, 10x):
+
+```bash
+cd atc-simulator && bun run demo:bay-emergency -- --speed 10 --flights 8 --no-incidents
+```
