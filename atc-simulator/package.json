@@ -24,7 +24,10 @@
     "start": "bun scripts/dev.ts --prod",
     "server": "bun server/src/main.ts",
     "demo:operator-link": "bun scripts/operator-link.ts",
-    "demo:reset": "bun scripts/demo-reset.ts"
+    "demo:reset": "bun scripts/demo-reset.ts",
+    "relay:local": "bun scripts/relay-local.ts",
+    "worker": "bun server/src/simulation/worker.ts",
+    "worker:local-relay": "bun --env-file=.env --env-file=.env.local-relay server/src/simulation/worker.ts"
   },
   "dependencies": {
     "zod": "4.6.7"

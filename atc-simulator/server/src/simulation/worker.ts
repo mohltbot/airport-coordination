@@ -443,7 +443,7 @@ export function workerHealth(status: WorkerStatus): DependencyHealth {
  * hop latency (envelope creation to actor receipt). READY only while sends succeed and hops are
  * short; hosted Relay answered 503 database_overloaded / 429 workspace_busy for minutes at a time.
  */
-export function relayHealthTracker(now: () => number = Date.now) {
+export function relayHealthTracker(label = "hosted Relay", now: () => number = Date.now) {
     const WINDOW_MS = 60_000
     const sends: Array<{ at: number; ok: boolean; code: string | null }> = []
     const hops: Array<{ at: number; ms: number }> = []
@@ -469,10 +469,10 @@ export function relayHealthTracker(now: () => number = Date.now) {
             const hop = p50 === null ? "no deliveries" : `p50 hop ${Math.round(p50 / 1000)} s`
             const codes = [...new Set(failed.map(f => f.code).filter(Boolean))].slice(0, 2).join(", ")
             if (sends.length >= 5 && failed.length === sends.length)
-                return { status: "UNAVAILABLE", detail: `hosted Relay failing: all ${sends.length} sends in last 60 s failed${codes ? ` (${codes})` : ""}` }
+                return { status: "UNAVAILABLE", detail: `${label} failing: all ${sends.length} sends in last 60 s failed${codes ? ` (${codes})` : ""}` }
             if (failed.length >= 3 || (p50 !== null && p50 > 15_000))
-                return { status: "DEGRADED", detail: `hosted Relay overloaded: ${failed.length} send failures in last 60 s${codes ? ` (${codes})` : ""}, ${hop}` }
-            return { status: "READY", detail: p50 === null ? null : hop }
+                return { status: "DEGRADED", detail: `${label} overloaded: ${failed.length} send failures in last 60 s${codes ? ` (${codes})` : ""}, ${hop}` }
+            return { status: "READY", detail: p50 === null ? label : `${label}, ${hop}` }
         },
     }
 }
@@ -487,7 +487,12 @@ const load = (rel: string): Promise<Record<string, unknown>> => import(new URL(r
 async function main() {
     const env = process.env
     const log = (line: string) => console.log(`${new Date().toISOString()} ${line}`)
-    const relayStats = relayHealthTracker()
+    // LOCAL for Agent Relay's local engine (spec timings), HOSTED for cast.agentrelay.com.
+    const relayProfile = (env.RELAY_TRANSPORT_PROFILE ?? env.RELAY_PROFILE)?.trim().toUpperCase() === "LOCAL" ? ("LOCAL" as const) : ("HOSTED" as const)
+    const relayBase = env.RELAY_BASE_URL || env.RELAY_BASE || ""
+    const relayLabel = env.RELAY_LABEL?.trim() || (/\/\/(127\.0\.0\.1|localhost|\[::1\])[:/]/.test(relayBase) ? "Agent Relay (local engine)" : "hosted Relay")
+    const relayStats = relayHealthTracker(relayLabel)
+    log(`relay: ${relayLabel}, profile ${relayProfile}`)
 
     const { loadWorkerRepository } = await import("./repository.ts")
     const repo = await loadWorkerRepository(env)
@@ -505,7 +510,7 @@ async function main() {
         const outbox = await load("../relay/outbox.ts")
         const { resolveRelayTiming } = await import("@ghost-tower/domain/constants")
         transport = (relay.hostedRelayFromEnv as (e: typeof env) => RelayTransport)(env)
-        const timing = resolveRelayTiming("HOSTED", env)
+        const timing = resolveRelayTiming(relayProfile, env)
         const dispatch = outbox.dispatchDueOutboxes as (ctx: { transport: RelayTransport; outbox: unknown; timing: unknown; log?: unknown }) => Promise<unknown>
         const relayTransport = transport
         dispatchOutboxes = async (lease, context) => {
@@ -552,7 +557,7 @@ async function main() {
         transport,
         commandSecret: env.COMMAND_SIGNING_SECRET ?? null,
         negotiation: {
-            profile: env.RELAY_PROFILE === "LOCAL" ? "LOCAL" : "HOSTED",
+            profile: relayProfile,
             decisionMode: env.GHOST_DECISION_MODE === "IMMEDIATE" || env.GHOST_DECISION_MODE === "JOB" ? env.GHOST_DECISION_MODE : env.AGENT_MODE === "live" ? "JOB" : "IMMEDIATE",
         },
         dispatchOutboxes,
