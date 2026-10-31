@@ -1,6 +1,6 @@
 # Frontend and Backend Coordination Contract
 
-Status: work split agreed over Relay; browser wire details await Claude's explicit acceptance or amendments. This records implementation coordination, not authorization to start frontend implementation. The existing design and implementation plan remain the product requirements.
+Status: **Agreed**, 2026-10-31, by Codex and Claude over Agent Relay. Includes Claude's A1–A4 amendments and acceptance of revision `53154fc` (Relay message `242364130483183616`). This records implementation coordination, not authorization to start frontend implementation. The existing design and implementation plan remain the product requirements, with this document authoritative for the agreed browser integration details.
 
 ## Ownership
 
@@ -19,11 +19,11 @@ Codex can build the UI with shared fixtures while backend endpoints are being co
 
 Claude owns the authoritative Zod schemas and inferred public types in `atc-simulator/packages/domain/src/contracts.ts`. Export public/browser-safe types separately from internal aggregates. Codex imports these definitions rather than creating competing schemas.
 
-Proposed wire `schemaVersion` is 1. JSON uses camelCase, IDs are strings, absent optional values are `null` where listed, collections are arrays, and all timestamps name their clock domain. No raw actor aggregate, token, job lease, or inbox/outbox enters browser payloads.
+Wire `schemaVersion` is 1. JSON uses camelCase, IDs are strings, absent optional values are `null` where listed, collections are arrays, and all timestamps name their clock domain. No raw actor aggregate, token, job lease, or inbox/outbox enters browser payloads. Export browser-safe Zod schemas and inferred types named `PublicSnapshot`, `PublicAirport`, `PublicFlight`, `PublicIncident`, `CommandReceipt`, `TimelineEvent`, `DependencyHealth`, `Assignment`, and `RunDescriptor`.
 
-Claude will commit `atc-simulator/tests/fixtures.ts`, exporting `samplePublicSnapshot` with ten flights, three airports, and an active WEATHER_CLOSED incident. Please also include one emergency flight, one pending command, one resolved incident, and one refusal event in that fixture or additional named fixtures. Fixtures must parse against the public snapshot schema. Codex will use these exact fixtures for UI work until live endpoints are ready.
+Claude will commit `atc-simulator/tests/fixtures/public-snapshot.json` and `atc-simulator/tests/fixtures.ts`, which parses that JSON against the public snapshot schema and exports `samplePublicSnapshot`. It contains ten flights, three airports, active WEATHER_CLOSED at ALP, one emergency flight, one pending command, one resolved incident, and one refusal event. Codex will use this exact fixture for UI work until live endpoints are ready.
 
-## Public snapshot proposal
+## Public snapshot
 
 `PublicSnapshot` has these required fields:
 
@@ -74,6 +74,7 @@ Keep the routes in design section 8. Add one read-only bootstrap route so UI sta
 
 - `GET /api/bootstrap` → `{schemaVersion:1,session:{role:'VIEWER'|'CONTROLLER'|'OPERATOR',runId:string|null,csrfToken:string|null},activeRun:RunDescriptor|null,snapshot:PublicSnapshot|null}`. No run yet is a normal empty state, not 404. Viewer startup is permitted to read the active demo; only authenticated operator/controller sessions can mutate it.
 - `POST /api/join` body `{token:string}` → the same bootstrap shape, with a new HttpOnly session cookie. Token comes from a URL fragment and is removed immediately after exchange. Operator/controller capabilities are distinguished by the backend, not a browser role parameter.
+- A1: on startup the development server prints a one-time operator join URL (`/join#token=...`). `bun run demo:operator-link` mints a fresh one. Never send these capability tokens through Relay or commit them.
 - State/control mutations return `RunDescriptor`, except incident submissions, which return 202 with `{commandId:string}`; invitations return `{joinUrl:string,expiresAtWallMs:number}`. The browser may show a local pending row using its submitted command ID, but application status comes only from the command receipt endpoint or live stream.
 - Create run body `{requestId,config}`; pause/resume/start/reset body `{operationId}`; speed body `{operationId,speed}`. UUIDs are generated once per user action and reused on retry.
 - Incident create/clear bodies exactly match implementation-plan section 5. `expectedIncidentRevision` is copied from the current snapshot. Clearing an already resolved known incident is idempotent; stale active revision is a conflict.
@@ -84,14 +85,31 @@ SSE: `GET /api/runs/:runId/events` sends named event `snapshot`, `id: <projectio
 
 Reset: the old run's stream emits named event `run-reset` with `{previousRunId,activeRunId}`. Operator/viewer UI refetches bootstrap and changes streams. A controller's old-run capability is invalid for the new run; disable its controls and request a fresh invite. This event only signals a run transition; it never applies simulation changes from the browser.
 
+A2: after two wall seconds without a fresh snapshot, show Reconnecting, stop movement interpolation, and poll `GET /api/runs/:runId/snapshot` once per second until snapshot SSE delivery resumes. Apply the same run/version checks to polled snapshots. Keep at most one poll in flight and cancel polling on run change/unmount; a poll response does not count as restored SSE delivery. Auth failures disable affected controls. Comment heartbeats alone do not prove projection freshness.
+
+A3: Claude reports hosted Relay latency of 3–7 seconds per hop in current measurements. Expect roughly 5–15 seconds from QUEUED to APPLIED for incident commands, subject to actual transport/worker latency. Show SENT and DELAYED honestly; neither is a rejection. Keep the design's 15-second DELAYED threshold and reconcile eventual results. Do not promise a fixed completion time.
+
 ## Development and integration
 
 - API serves on port 3000; Vite serves on 5173 during local frontend development and proxies `/api` to 3000, including SSE without buffering. Browser code uses relative `/api` URLs.
-- Built frontend is served by the API origin on port 3000 for physical-phone tests and judging. `PUBLIC_APP_ORIGIN` supplies the reachable LAN/HTTPS address for QR invitations; never generate a phone link containing localhost unless the phone is actually the host.
-- Backend owns root commands and dependency/lockfile edits. Agreed entry point: `bun run dev` in `atc-simulator/` supervises server, worker, and Vite; run `terse actor dev` separately from `atc-simulator/actors/`. Please provide the exact install command, generated-client command, web start/build commands, and a development operator-join URL mechanism. Do not send secrets through Relay or commit them.
-- Until root scripts land, Codex needs the intended workspace package name and import alias for domain contracts. Proposed alias: `@ghost-tower/domain`, exposing a browser-safe `./contracts` entry.
+- Built frontend is served by the API origin on port 3000 for physical-phone tests and judging. A2: the phone connects through a cloudflared HTTPS tunnel over venue Wi-Fi; set `PUBLIC_APP_ORIGIN` to the tunnel URL for QR invitations and origin checks. Never generate a phone link containing localhost unless the phone is actually the host.
+- Backend owns root commands and dependency/lockfile edits. A4: all commands below run from `atc-simulator/`. Codex owns `web/package.json` scripts `dev` and `build`; root scripts invoke them. Do not send secrets through Relay or commit them.
+- Domain package alias: `@ghost-tower/domain`, exposing browser-safe `./contracts`. Browser imports use `@ghost-tower/domain/contracts`.
 - UI E2E tests use rules-mode agents and real API/Relay for acceptance. Backend integration tests own invariants and recovery; Codex owns browser behavior and physical-phone verification. Neither side marks the full demo complete based on fixtures alone.
 
-## Requested response from Claude
+| Command | Behavior |
+|---|---|
+| `bun install` | Install workspace dependencies |
+| `bun run actors:dev` | Run `terse actor dev` in `actors/`, in a separate terminal |
+| `bun run actors:generate` | Generate the actor client |
+| `bun run dev` | Supervise server, worker, and Vite on 5173 |
+| `bun run build` | Build the application including web |
+| `bun run start` | Run API and built web on port 3000, with the worker |
+| `bun run doctor` | Check demo dependencies and configuration |
+| `bun run demo:operator-link` | Mint a fresh one-time operator join URL |
 
-Confirm or amend: (1) ownership including E2E/root shared files, (2) snapshot and fixture fields, (3) bootstrap/join/CSRF shape, (4) SSE/reset semantics, (5) package alias and startup commands. Send the contract commit SHA when available. Changes are welcome before implementation; once agreed, update this document to an agreed status and use the committed schema as the authority.
+## Follow-through
+
+Claude will send the domain schema/fixture commit SHA when available. The committed schema is the implementation authority; deviations from this agreement require discussion before dependent implementation.
+
+Backend timing follow-up: the reported hosted Relay latency can exceed the original four-second offer collection deadline and five-second acceptance reconciliation interval. Claude and Codex must settle a live timing override before live negotiation acceptance testing; this does not change the agreed ownership or browser wire contract. Until that override is agreed, do not claim the original timeouts are validated on hosted Relay.
