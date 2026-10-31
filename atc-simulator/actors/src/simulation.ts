@@ -154,7 +154,10 @@ export function resetRun(root: SimulationRootState, runId: string, operationId: 
     const fenced = logEvent({ ...old, phase: "RESETTING", fencedAtWallMs: nowMs, workerLease: null, pendingTick: null }, nowMs, "RUN_RESET", "Run fenced by reset", operationId)
     const run = newRun(newRunId, key, old.config, nowMs, old.workerEpoch)
     const next = withRun(withRun({ ...root, activeRunId: newRunId, createRequests: { ...root.createRequests, [key]: newRunId } }, fenced), run)
-    return { root: next, run }
+    // Every call reads and writes this one aggregate, so fenced runs drop their 30 to 60 KB
+    // public snapshot (actors still hold their state). With eight runs kept, calls took 300 ms.
+    const runs = Object.fromEntries(Object.entries(next.runs).map(([id, r]) => [id, id === newRunId || r.publicSnapshot === null ? r : { ...r, publicSnapshot: null }]))
+    return { root: { ...next, runs }, run }
 }
 
 export function recordInitStep(root: SimulationRootState, runId: string, step: InitStep, nowMs: number): { root: SimulationRootState; run: SimulationState } {
@@ -214,6 +217,13 @@ export function ackTickEntity(root: SimulationRootState, lease: WorkerLease, tic
     if (!tick.entityIds.includes(entityId)) throw new RunError("INVALID_PAYLOAD", `${entityId} is not part of ${tickId}`)
     if (tick.acknowledgedEntityIds.includes(entityId)) return root
     return withRun(root, { ...run, pendingTick: { ...tick, acknowledgedEntityIds: [...tick.acknowledgedEntityIds, entityId] } })
+}
+
+// One write for every entity of a tick (the worker used to make one write per entity).
+export function ackTickEntities(root: SimulationRootState, lease: WorkerLease, tickId: string, entityIds: EntityId[], nowMs: number): SimulationRootState {
+    let next = root
+    for (const entityId of entityIds) next = ackTickEntity(next, lease, tickId, entityId, nowMs)
+    return next
 }
 
 export function completeTick(root: SimulationRootState, lease: WorkerLease, tickId: string, nowMs: number): SimulationRootState {

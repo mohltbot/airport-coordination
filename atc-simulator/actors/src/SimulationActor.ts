@@ -122,6 +122,10 @@ export class SimulationActor extends Actor<null, null> {
         this.root = sim.ackTickEntity(this.root, lease, tickId, entityId, Date.now())
     }
 
+    async ackTickEntities(lease: WorkerLease, tickId: string, entityIds: EntityId[]): Promise<void> {
+        this.root = sim.ackTickEntities(this.root, lease, tickId, entityIds, Date.now())
+    }
+
     async completeTick(lease: WorkerLease, tickId: string): Promise<void> {
         this.root = sim.completeTick(this.root, lease, tickId, Date.now())
     }
