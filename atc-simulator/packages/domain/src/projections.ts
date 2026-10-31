@@ -3,7 +3,7 @@
 // Every public object is built field by field so no private key (token, inbox, outbox,
 // job input, fencing, authorization) can ride along. No node APIs, no process.env.
 // Relative imports end in ".js": the actor's NodeNext compiler rejects ".ts" and extensionless.
-import { MAX_REASON_CHARS, RUNWAY_IDS, RUNWAY_OCCUPANCY_SEC, TIMELINE_MAX_VISIBLE } from "./constants.js"
+import { US_AIRPORTS, MAX_REASON_CHARS, RUNWAY_IDS, RUNWAY_OCCUPANCY_SEC, TIMELINE_MAX_VISIBLE } from "./constants.js"
 import {
     PublicSnapshotSchema,
     type AgentMode,
@@ -269,7 +269,12 @@ function summarize(type: string, payload: unknown): string {
             return `We can offer runway ${p.runwayId} at ${simClock(p.slotStartSimSec)}. Can you accept?`
         }
         case "LANDING_REFUSED": {
-            const p = payload as Payload<"LANDING_REFUSED">
+            const p = payload as Payload<"LANDING_REFUSED"> & { reasonCode?: string | null; reasonText?: string | null }
+            const reason = p.reasonText?.trim() || (p.reasonCode ? spokenCode(p.reasonCode) : null)
+            if (reason) {
+                const tower = US_AIRPORTS.find(a => a.airportId === p.airportId)?.city ?? p.airportId
+                return `${tower} Tower: unable to accept your landing request, ${reason.replace(/[.!]$/, "")}.`
+            }
             return withDetail(`Unable to accept your landing request: ${spokenCode(p.code)}.`, p.explanation)
         }
         case "OFFER_ACCEPT":
