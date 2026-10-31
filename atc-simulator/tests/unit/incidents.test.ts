@@ -653,3 +653,28 @@ describe("negotiation hooks (actors/src/incident-receive.ts)", () => {
         expect(receiveIncidentStep(a0, mctx, deliver(refused!.envelope))).toBeNull()
     })
 })
+
+describe("SimulationActor ledger helpers (actors/src/ledger.ts)", () => {
+    test("signs with the router's proof format and persists a dispatchable envelope", async () => {
+        const { signCommandProof, submitLedgerCommand, controllerOutboxOnRoot } = await import("../../actors/src/ledger.ts")
+        const { commandProof, verifyCommandProof } = await import("../../server/src/relay/router.ts")
+        const fields = { runId, commandId: uuid(), commandSequence: 3, toEntityId: "airport:ALP", type: "INCIDENT_CREATE" as const, incidentId: uuid() }
+        expect(await signCommandProof("test-secret", fields)).toBe(commandProof("test-secret", fields))
+
+        const root = { activeRunId: runId, runs: { [runId]: simulation() }, createRequests: {}, relayEventCursor: 0 }
+        const cmd = createCmd(weather())
+        const out = await submitLedgerCommand(root, cmd, principal, T0, "test-secret")
+        expect(out.receipt.status).toBe("QUEUED")
+        const env = out.root.runs[runId]!.controllerOutbox[0]!.envelope as ControllerCommandEnvelope
+        expect(
+            verifyCommandProof("test-secret", { runId, commandId: cmd.commandId, commandSequence: 1, toEntityId: "airport:ALP", type: "INCIDENT_CREATE", incidentId: cmd.payload.incidentId }, env.authorization),
+        ).toBe(true)
+        const again = await submitLedgerCommand(out.root, cmd, principal, T0 + 1, "test-secret")
+        expect(again.root).toBe(out.root)
+        await expect(submitLedgerCommand(out.root, { ...cmd, payload: weather() }, principal, T0, "s")).rejects.toThrow("COMMAND_ID_CONFLICT")
+
+        const lease = { runId, ownerId: "w", epoch: 1, token: "t", expiresAtWallMs: T0 + 10_000 }
+        const leased = { ...out.root, runs: { [runId]: { ...out.root.runs[runId]!, workerLease: lease } } }
+        expect(controllerOutboxOnRoot(leased, lease, T0 + 1000).entries).toHaveLength(1)
+    })
+})

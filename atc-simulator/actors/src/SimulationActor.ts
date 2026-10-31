@@ -12,9 +12,13 @@ import type {
     RunPhase,
     SimulationRootState,
     SimulationState,
+    DomainResult,
+    OutboxEntry,
+    ReceivedEnvelope,
     WorkerLease,
 } from "@ghost-tower/domain/contracts"
 import * as sim from "./simulation.js"
+import * as ledger from "./ledger.js"
 
 // The stable registry: SimulationActor.get("ghost-tower"). One persisted root aggregate holds
 // every run (reset adds a run, never deletes one). All transitions are pure functions in
@@ -68,7 +72,8 @@ export class SimulationActor extends Actor<null, null> {
     }
 
     async submitCommand(command: IncidentCommand, principal: ControllerPrincipal): Promise<CommandReceipt> {
-        const out = sim.submitCommand(this.root, command, principal, crypto.randomUUID(), Date.now())
+        // Task 3 ledger: per-target sequence and a persisted, signed controller outbox envelope.
+        const out = await ledger.submitLedgerCommand(this.root, command, principal, Date.now())
         this.root = out.root
         return out.receipt
     }
@@ -112,6 +117,24 @@ export class SimulationActor extends Actor<null, null> {
 
     async readPublic(runId: string): Promise<PublicSnapshot | null> {
         return this.root.runs[runId]?.publicSnapshot ?? null
+    }
+
+    // ---- controller ledger ports for the worker (Task 3)
+
+    async receiveController(lease: WorkerLease, message: ReceivedEnvelope): Promise<DomainResult> {
+        const out = ledger.receiveControllerOnRoot(this.root, lease, message, Date.now())
+        this.root = out.root
+        return out.result
+    }
+
+    async listControllerOutbox(lease: WorkerLease): Promise<OutboxEntry[]> {
+        const out = ledger.controllerOutboxOnRoot(this.root, lease, Date.now())
+        this.root = out.root
+        return out.entries
+    }
+
+    async recordControllerAttempt(lease: WorkerLease, attempt: { messageId: string; transportMessageId: string | null; attemptCount: number; nextAttemptAtWallMs: number }): Promise<void> {
+        this.root = ledger.recordControllerAttemptOnRoot(this.root, lease, attempt, Date.now())
     }
 
     async onMessage() {}
