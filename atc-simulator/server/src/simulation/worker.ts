@@ -466,7 +466,7 @@ export function relayHealthTracker(label = "hosted Relay", now: () => number = D
             const failed = sends.filter(s => !s.ok)
             const sorted = hops.map(h => h.ms).sort((a, b) => a - b)
             const p50 = sorted.length ? sorted[Math.floor(sorted.length / 2)]! : null
-            const hop = p50 === null ? "no deliveries" : `p50 hop ${Math.round(p50 / 1000)} s`
+            const hop = p50 === null ? "no deliveries" : `p50 hop ${p50 < 10_000 ? (p50 / 1000).toFixed(1) : Math.round(p50 / 1000)} s`
             const codes = [...new Set(failed.map(f => f.code).filter(Boolean))].slice(0, 2).join(", ")
             if (sends.length >= 5 && failed.length === sends.length)
                 return { status: "UNAVAILABLE", detail: `${label} failing: all ${sends.length} sends in last 60 s failed${codes ? ` (${codes})` : ""}` }
