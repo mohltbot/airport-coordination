@@ -2,8 +2,15 @@
   "name": "ghost-tower",
   "private": true,
   "type": "module",
-  "engines": { "bun": ">=1.4.4" },
-  "workspaces": ["packages/domain", "actors", "server"],
+  "engines": {
+    "bun": ">=1.4.4"
+  },
+  "workspaces": [
+    "packages/domain",
+    "actors",
+    "server",
+    "web"
+  ],
   "scripts": {
     "doctor": "bun scripts/doctor.ts",
     "actors:dev": "cd actors && terse actor dev",
