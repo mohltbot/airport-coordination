@@ -12,6 +12,7 @@ import type {
 } from "@ghost-tower/domain/contracts"
 import { markOutboxAccepted, rejected } from "./durability.ts"
 import { advanceEntity, fenceOnly, initializeEntity, receiveEntity } from "./entity.ts"
+import { receiveIncidentStep } from "./incident-receive.ts"
 
 // One per flight per run; actor ID `<runId>.flight.F001`.
 export class FlightActor extends Actor<null, null> {
@@ -28,6 +29,12 @@ export class FlightActor extends Actor<null, null> {
     }
 
     async receive(context: MutationContext, message: ReceivedEnvelope): Promise<DomainResult> {
+        // Task 3: INCIDENT_CREATE / INCIDENT_CLEAR in commandSequence order; null for other types.
+        const incident = receiveIncidentStep(this.state, context, message)
+        if (incident) {
+            if (incident.state) this.state = incident.state
+            return incident.result
+        }
         const step = receiveEntity(this.state, context, message)
         if (step.state) this.state = step.state
         return step.result

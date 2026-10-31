@@ -623,3 +623,33 @@ describe("controller ports", () => {
         expect(receiveControllerMessage(settled.state, ack, T0 + 8000).result.outcome).toBe("DUPLICATE")
     })
 })
+
+describe("negotiation hooks (actors/src/incident-receive.ts)", () => {
+    test("smoke opens an urgent round; weather answers a revoked hold with LANDING_REFUSED", async () => {
+        const { receiveIncidentStep } = await import("../../actors/src/incident-receive.ts")
+        const mctx = { runId, workerEpoch: 1, leaseToken: "lease", simNowSec: 100, wallNowMs: T0, operationId: "op-1" }
+
+        const smoke = createCmd(flightIncident("SMOKE"))
+        const sim = submit(simulation(), smoke).state
+        const f = receiveIncidentStep(flight({ fencing: { workerEpoch: 1, leaseToken: "lease" } }), mctx, envelopeFor(sim, smoke.commandId))!
+        expect(f.result.outcome).toBe("APPLIED")
+        expect(f.state!.priority).toBe("EMERGENCY")
+        expect(f.state!.negotiation?.trigger).toBe("EMERGENCY")
+        expect(f.state!.outbox.some(e => e.envelope.type === "LANDING_REQUEST")).toBe(true)
+        expect(f.state!.outbox.some(e => e.envelope.type === "COMMAND_RESULT")).toBe(true)
+        expect(FlightStateSchema.safeParse(f.state).success).toBe(true)
+
+        const offerBase = { negotiationId: "F002-N1", airportId: "ALP" as const, slotStartSimSec: 600, occupancySec: 60, expiresAtWallMs: T0 + 90_000, airportOperationalRevision: 0, requestMessageId: uuid(), priority: "NORMAL" as const }
+        const a0: AirportState = { ...airport(), fencing: { workerEpoch: 1, leaseToken: "lease" }, offers: { o1: { ...offerBase, offerId: "o1", runwayId: "R1", flightId: "F002", status: "OFFERED" } } }
+        const w = createCmd(weather())
+        const wsim = submit(simulation(), w).state
+        const a = receiveIncidentStep(a0, mctx, envelopeFor(wsim, w.commandId))!
+        expect(a.state!.offers.o1!.status).toBe("REVOKED")
+        const refused = a.state!.outbox.find(e => e.envelope.type === "LANDING_REFUSED")
+        expect(refused?.envelope.toEntityId).toBe("flight:F002")
+        expect(AirportStateSchema.safeParse(a.state).success).toBe(true)
+
+        // Not an incident command: the actor's own receive path handles it.
+        expect(receiveIncidentStep(a0, mctx, deliver(refused!.envelope))).toBeNull()
+    })
+})
