@@ -85,7 +85,7 @@ export function createWorld(config: RunConfig, options: WorldOptions, liveSeed?:
         const angle = 2 * Math.PI * rand()
         const distance = SPAWN_DISTANCE_MIN_NM + SPAWN_DISTANCE_RANGE_NM * rand()
         const fuel = INITIAL_FUEL_BASE_SEC + Math.floor(INITIAL_FUEL_RANGE_SEC * rand())
-        const origin = cfg.continuousTraffic ? directory[i % directory.length]! : null
+        const origin = cfg.continuousTraffic && !cfg.focusRegion ? directory[i % directory.length]! : null
         const position = origin ? { ...origin.position } : polarOffset(destination.position, angle, distance)
         const flightId = flightIdFor(i)
         flights.push({
@@ -115,7 +115,16 @@ export function createWorld(config: RunConfig, options: WorldOptions, liveSeed?:
             terminalReason: null,
         })
     }
-    return applyNycConfig(cfg, applyDemoConfig(cfg, { airports, flights: applyLiveTraffic(cfg, flights, liveSeed) }))
+    const world = applyNycConfig(cfg, applyDemoConfig(cfg, { airports, flights: applyLiveTraffic(cfg, flights, liveSeed) }))
+    // One background departure is already rolling at the start; subsequent legs are paced by the scheduler.
+    if (cfg.continuousTraffic && cfg.airportNetwork === "US" && cfg.focusRegion && cfg.flightCount >= 3) {
+        const flight = [...world.flights].reverse().find(f => f.flightId !== cfg.featuredFlightId)!
+        const origin = directory.find(a => a.airportId === (cfg.focusRegion === "NYC" ? "LGA" : "OAK"))!
+        const destination = directory.find(a => a.airportId === (cfg.focusRegion === "NYC" ? "ORD" : "LAX"))!
+        Object.assign(flight, { originAirportId: origin.airportId, originalDestination: destination.airportId,
+            position: { ...origin.position }, headingDeg: headingDeg(origin.position, destination.position), fuelRemainingSec: 5400 })
+    }
+    return world
 }
 
 // Fresh legs have a fresh actor identity and start at the current authoritative sim time.
@@ -126,9 +135,31 @@ export function createTrafficFlight(config: RunConfig, options: WorldOptions, se
     const initial = createWorld({ ...config, flightCount: 1, seed: (config.seed + sequence) >>> 0, continuousTraffic: true }, options).flights[0]!
     const flightId = flightIdFor(sequence)
     const live = liveFlightFor(config, liveSeed, flightId)
+    if (config.airportNetwork === "US" && config.focusRegion) {
+        const regionalIds = regionalAirports(config)
+        const offset = sequence - config.flightCount - 1
+        const regional = directory.find(a => a.airportId === regionalIds[Math.floor(offset / 2) % regionalIds.length])!
+        const outbound = offset % 2 === 0
+        const remoteIds = config.focusRegion === "NYC" ? ["ORD", "CLT", "MIA"] : ["LAX", "LAS", "DEN"]
+        const remote = directory.find(a => a.airportId === remoteIds[Math.floor(offset / 2) % remoteIds.length])!
+        const rand = mulberry32(config.seed + sequence * 7919)
+        const destination = outbound ? remote : regional
+        const position = outbound ? { ...regional.position } : polarOffset(regional.position, sequence * 2.39996, 18 + rand() * 16)
+        // Callsigns are borrowed from the live seed; routes and timing remain simulated.
+        const { originAirportId: _origin, ...base } = initial
+        return { ...base, flightId, entityId: flightEntityId(flightId), callsign: live?.callsign ?? `GHOST ${flightId.slice(1)}`,
+            originalDestination: destination.airportId, ...(outbound ? { originAirportId: regional.airportId } : {}),
+            position, headingDeg: headingDeg(position, destination.position), fuelRemainingSec: 5400,
+            lastAdvancedSimSec: simNowSec }
+    }
     const liveDestination = live && !isBayAreaFocus(config) ? directory.find(a => a.airportId === live.destinationAirportId) : undefined
     const destination = liveDestination ?? directory[(sequence - 1) % directory.length]!
     let origin = directory[sequence % directory.length]!
     if (origin.airportId === destination.airportId) origin = directory[(sequence + 1) % directory.length]!
     return { ...initial, flightId, entityId: flightEntityId(flightId), callsign: live?.callsign ?? `GHOST ${flightId.slice(1)}`, originalDestination: destination.airportId, originAirportId: origin.airportId, position: { ...origin.position }, headingDeg: headingDeg(origin.position, destination.position), lastAdvancedSimSec: simNowSec }
+}
+
+// Local departures stay within the chosen region. MRY remains available to the featured story.
+export function regionalAirports(config: RunConfig): AirportId[] {
+    return config.focusRegion === "NYC" ? ["JFK", "LGA", "EWR"] : ["SFO", "OAK", "SJC"]
 }

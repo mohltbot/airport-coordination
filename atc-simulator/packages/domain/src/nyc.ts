@@ -47,7 +47,7 @@ function spawnNear(destination: Point, rand: () => number, index: number): Point
 }
 
 export const isNycFocus = (config: Pick<RunConfig, "airportNetwork" | "focusRegion" | "continuousTraffic">): boolean =>
-    config.focusRegion === "NYC" && config.airportNetwork === "US" && !config.continuousTraffic
+    config.focusRegion === "NYC" && config.airportNetwork === "US"
 
 // Re-place a US world's flights around JFK and LGA (never EWR): ENROUTE, NORMAL, 240 kt, fuel >= 3600 s.
 export function placeNycFlights(config: RunConfig, flights: readonly FlightState[]): FlightState[] {

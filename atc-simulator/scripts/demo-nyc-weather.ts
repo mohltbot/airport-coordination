@@ -4,13 +4,14 @@
 // outboxes (messages that travelled over Agent Relay).
 //
 //   1. reset the active run if one is live, create a US run focused on New York
-//      (4 flights: 3 inbound to JFK, 1 to LGA, all inside the Northeast view)
+//      (4 flights: 3 inbound to JFK, 1 departing LGA; --finite retains the original 4 arrivals)
 //   2. start (init saga, PAUSED) and resume
 //   3. settle: wait until JFK has confirmed bookings (or --settle-sec runs out)
 //   4. WEATHER_CLOSED at airport:JFK through the controller command path (LGA and EWR stay open)
 //   5. follow the timeline until every JFK flight is booked at LGA or EWR and has landed (or timeout)
 //
 // Flags: --speed 1|5|10 (10)  --flights N (4)  --seed N  --settle-sec N (8)  --timeout-sec N (300)
+//        --finite (disable ongoing arrivals/departures)
 //        --no-reset  --no-incidents (leave WEATHER_CLOSED to the phone)
 //        --weather-on-enter  after the settle, pause the run and wait for Enter; Enter resumes and closes JFK
 // The operator capability is minted locally and never printed.
@@ -92,7 +93,7 @@ async function main() {
         const reset = await post<any>(`/api/runs/${active.runId}/reset`, { operationId: crypto.randomUUID() })
         log(`reset run ${active.runId.slice(0, 8)} (${active.phase}) -> ${reset.runId.slice(0, 8)} ${reset.phase}`)
     }
-    const config: RunConfig = { flightCount, seed, speed, airportNetwork: "US", focusRegion: "NYC" }
+    const config: RunConfig = { flightCount, seed, speed, airportNetwork: "US", focusRegion: "NYC", continuousTraffic: !argv.includes("--finite") }
     const created = await post<any>("/api/runs", { requestId: crypto.randomUUID(), config })
     const runId: string = created.runId
     log(`RUN_ID ${runId} created: ${JSON.stringify(created.config)}`)
@@ -158,6 +159,7 @@ async function main() {
     log(`${CLOSED} ${snap.airports.find(a => a.airportId === CLOSED)!.statusReason ?? "CLOSED"} (${((closedAt - closeSentAt) / 1000).toFixed(1)} s after submit)`)
 
     // 5. follow the real messages until every flight has landed or is unresolved
+    const originalFlights = new Map(snap.flights.map(f => [f.flightId, f]))
     const until = closeSentAt + timeoutSec * 1000
     const landedAt = new Map<string, { ms: number; airport: string }>()
     const lastBooking = new Map<string, string>()
@@ -171,6 +173,8 @@ async function main() {
         last = s
         drain(s)
         for (const f of s.flights) {
+            if (!originalFlights.has(f.flightId)) continue
+            originalFlights.set(f.flightId, f)
             const b = f.activeAssignment?.airportId
             if (b && lastBooking.get(f.flightId) !== where(f)) {
                 if (lastBooking.has(f.flightId)) log(`${f.flightId} booking: ${where(f)}`)
@@ -181,7 +185,7 @@ async function main() {
                 log(`${f.flightId} LANDED at ${landedAt.get(f.flightId)!.airport}`)
             }
         }
-        if (s.flights.every(f => f.phase === "LANDED" || f.phase === "UNRESOLVED")) break
+        if ([...originalFlights.values()].every(f => f.phase === "LANDED" || f.phase === "UNRESOLVED")) break
         await sleep(500)
     }
 
@@ -192,7 +196,7 @@ async function main() {
     console.log(`  ${CLOSED} closed (seen)      ${((closedAt - closeSentAt) / 1000).toFixed(1)} s`)
     let diverted = 0
     const tally: Record<string, number> = {}
-    for (const f of last.flights) {
+    for (const f of originalFlights.values()) {
         const F = f.entityId
         const first = (type: string, pred: (e: TimelineEvent) => boolean = () => true) => events.find(e => e.type === type && pred(e)) ?? null
         const fmt = (label: string, e: TimelineEvent | null) => `    ${label.padEnd(22)} ${e ? `${sec(e)}  sim ${Math.round(e.simTimeSec)}  ${e.eventId}  ${e.source}` : "     -"}`
@@ -215,8 +219,8 @@ async function main() {
         if (landing) console.log(`    ${"landed (seen)".padEnd(22)} ${((landing.ms - closeSentAt) / 1000).toFixed(1).padStart(6)}  at ${landing.airport}`)
     }
     const sources = events.reduce<Record<string, number>>((acc, e) => ((acc[e.source] = (acc[e.source] ?? 0) + 1), acc), {})
-    console.log(`\nFinal airports: ${JSON.stringify(tally)}; JFK flights diverted to LGA/EWR: ${diverted} of ${last.flights.filter(f => f.originalDestination === CLOSED).length}; message sources after closure: ${JSON.stringify(sources)}; sim now ${Math.round(last.simTimeSec)}`)
-    const ok = diverted === last.flights.filter(f => f.originalDestination === CLOSED).length
+    console.log(`\nFinal airports: ${JSON.stringify(tally)}; JFK flights diverted to LGA/EWR: ${diverted} of ${[...originalFlights.values()].filter(f => f.originalDestination === CLOSED).length}; message sources after closure: ${JSON.stringify(sources)}; sim now ${Math.round(last.simTimeSec)}`)
+    const ok = diverted === [...originalFlights.values()].filter(f => f.originalDestination === CLOSED).length
     console.log(ok ? "PASS: every JFK flight re-negotiated to LGA or EWR after the closure." : "INCOMPLETE: see the flights above.")
     process.exit(ok ? 0 : 1)
 }
