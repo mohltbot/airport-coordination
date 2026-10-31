@@ -1,0 +1,640 @@
+{
+  "_fixture": "DEVELOPMENT DATA. Hand-built sample for offline UI work; not live agent or Relay activity.",
+  "schemaVersion": 1,
+  "runId": "6a1f0c2e-5b7d-4e8a-9c3f-2d4b6e8f0a1c",
+  "projectionVersion": 1680,
+  "phase": "RUNNING",
+  "simTimeSec": 420,
+  "serverWallTimeMs": 1793466000000,
+  "config": {
+    "flightCount": 10,
+    "seed": 20261031,
+    "speed": 10
+  },
+  "airports": [
+    {
+      "entityId": "airport:ALP",
+      "airportId": "ALP",
+      "name": "Alpha",
+      "position": {
+        "x": 50,
+        "y": 50
+      },
+      "status": "CLOSED",
+      "statusReason": "Weather closure",
+      "stateRevision": 7,
+      "runways": [
+        {
+          "runwayId": "R1",
+          "status": "CLOSED",
+          "occupiedUntilSimSec": null
+        },
+        {
+          "runwayId": "R2",
+          "status": "CLOSED",
+          "occupiedUntilSimSec": null
+        }
+      ],
+      "queue": []
+    },
+    {
+      "entityId": "airport:BRV",
+      "airportId": "BRV",
+      "name": "Bravo",
+      "position": {
+        "x": 110,
+        "y": 110
+      },
+      "status": "OPEN",
+      "statusReason": null,
+      "stateRevision": 12,
+      "runways": [
+        {
+          "runwayId": "R1",
+          "status": "OPEN",
+          "occupiedUntilSimSec": null
+        },
+        {
+          "runwayId": "R2",
+          "status": "OPEN",
+          "occupiedUntilSimSec": null
+        }
+      ],
+      "queue": [
+        {
+          "reservationId": "res-BRV-F002",
+          "flightId": "F002",
+          "runwayId": "R2",
+          "slotStartSimSec": 660,
+          "status": "CONFIRMED",
+          "priority": "NORMAL"
+        },
+        {
+          "reservationId": "res-BRV-F005",
+          "flightId": "F005",
+          "runwayId": "R1",
+          "slotStartSimSec": 750,
+          "status": "CONFIRMED",
+          "priority": "NORMAL"
+        },
+        {
+          "reservationId": "res-BRV-F008",
+          "flightId": "F008",
+          "runwayId": "R2",
+          "slotStartSimSec": 840,
+          "status": "CONFIRMED",
+          "priority": "NORMAL"
+        }
+      ]
+    },
+    {
+      "entityId": "airport:CHR",
+      "airportId": "CHR",
+      "name": "Charlie",
+      "position": {
+        "x": 170,
+        "y": 50
+      },
+      "status": "OPEN",
+      "statusReason": null,
+      "stateRevision": 9,
+      "runways": [
+        {
+          "runwayId": "R1",
+          "status": "OCCUPIED",
+          "occupiedUntilSimSec": 450
+        },
+        {
+          "runwayId": "R2",
+          "status": "OPEN",
+          "occupiedUntilSimSec": null
+        }
+      ],
+      "queue": [
+        {
+          "reservationId": "res-CHR-F003",
+          "flightId": "F003",
+          "runwayId": "R1",
+          "slotStartSimSec": 690,
+          "status": "CONFIRMED",
+          "priority": "NORMAL"
+        },
+        {
+          "reservationId": "res-CHR-F006",
+          "flightId": "F006",
+          "runwayId": "R2",
+          "slotStartSimSec": 780,
+          "status": "CONFIRMED",
+          "priority": "NORMAL"
+        },
+        {
+          "reservationId": "res-CHR-F009",
+          "flightId": "F009",
+          "runwayId": "R1",
+          "slotStartSimSec": 870,
+          "status": "CONFIRMED",
+          "priority": "NORMAL"
+        }
+      ]
+    }
+  ],
+  "flights": [
+    {
+      "entityId": "flight:F001",
+      "flightId": "F001",
+      "callsign": "GHOST 001",
+      "position": {
+        "x": 47.04,
+        "y": 50.99
+      },
+      "headingDeg": 71.5,
+      "speedKnots": 240,
+      "fuelRemainingSec": 3532,
+      "phase": "HOLDING",
+      "priority": "NORMAL",
+      "deadlineSimSec": null,
+      "originalDestination": "ALP",
+      "activeAssignment": null,
+      "negotiationStage": "COLLECTING",
+      "stateRevision": 11,
+      "lastDecisionReason": "Alpha closed for weather; requesting Bravo and Charlie.",
+      "lastDecisionSource": "RULES_FALLBACK",
+      "unresolvedReason": null,
+      "proposals": [
+        {
+          "offerId": "offer-CHR-F001",
+          "airportId": "CHR",
+          "runwayId": "R1",
+          "slotStartSimSec": 900,
+          "expiresAtWallMs": 1793466015000
+        }
+      ]
+    },
+    {
+      "entityId": "flight:F002",
+      "flightId": "F002",
+      "callsign": "GHOST 002",
+      "position": {
+        "x": 114.52,
+        "y": 104.61
+      },
+      "headingDeg": 220,
+      "speedKnots": 240,
+      "fuelRemainingSec": 4122,
+      "phase": "ENROUTE",
+      "priority": "NORMAL",
+      "deadlineSimSec": null,
+      "originalDestination": "BRV",
+      "activeAssignment": {
+        "airportId": "BRV",
+        "runwayId": "R2",
+        "reservationId": "res-BRV-F002",
+        "slotStartSimSec": 660,
+        "occupancySec": 60,
+        "clearanceId": null
+      },
+      "negotiationStage": "CONFIRMED",
+      "stateRevision": 12,
+      "lastDecisionReason": "Original destination offered an achievable slot.",
+      "lastDecisionSource": "RULES_FALLBACK",
+      "unresolvedReason": null,
+      "proposals": []
+    },
+    {
+      "entityId": "flight:F003",
+      "flightId": "F003",
+      "callsign": "GHOST 003",
+      "position": {
+        "x": 163.94,
+        "y": 52.52
+      },
+      "headingDeg": 67.43,
+      "speedKnots": 240,
+      "fuelRemainingSec": 3813,
+      "phase": "ENROUTE",
+      "priority": "NORMAL",
+      "deadlineSimSec": null,
+      "originalDestination": "CHR",
+      "activeAssignment": {
+        "airportId": "CHR",
+        "runwayId": "R1",
+        "reservationId": "res-CHR-F003",
+        "slotStartSimSec": 690,
+        "occupancySec": 60,
+        "clearanceId": null
+      },
+      "negotiationStage": "CONFIRMED",
+      "stateRevision": 13,
+      "lastDecisionReason": "Original destination offered an achievable slot.",
+      "lastDecisionSource": "RULES_FALLBACK",
+      "unresolvedReason": null,
+      "proposals": []
+    },
+    {
+      "entityId": "flight:F004",
+      "flightId": "F004",
+      "callsign": "GHOST 004",
+      "position": {
+        "x": 50,
+        "y": 50
+      },
+      "headingDeg": 135,
+      "speedKnots": 240,
+      "fuelRemainingSec": 3685,
+      "phase": "HOLDING",
+      "priority": "EMERGENCY",
+      "deadlineSimSec": 1200,
+      "originalDestination": "ALP",
+      "activeAssignment": null,
+      "negotiationStage": "ACCEPTING",
+      "stateRevision": 14,
+      "lastDecisionReason": "Smoke reported; Bravo is the closest feasible offer.",
+      "lastDecisionSource": "RULES_FALLBACK",
+      "unresolvedReason": null,
+      "proposals": [
+        {
+          "offerId": "offer-BRV-F004",
+          "airportId": "BRV",
+          "runwayId": "R2",
+          "slotStartSimSec": 540,
+          "expiresAtWallMs": 1793466012000
+        }
+      ]
+    },
+    {
+      "entityId": "flight:F005",
+      "flightId": "F005",
+      "callsign": "GHOST 005",
+      "position": {
+        "x": 108.68,
+        "y": 108.79
+      },
+      "headingDeg": 132.46,
+      "speedKnots": 240,
+      "fuelRemainingSec": 3273,
+      "phase": "ENROUTE",
+      "priority": "NORMAL",
+      "deadlineSimSec": null,
+      "originalDestination": "BRV",
+      "activeAssignment": {
+        "airportId": "BRV",
+        "runwayId": "R1",
+        "reservationId": "res-BRV-F005",
+        "slotStartSimSec": 750,
+        "occupancySec": 60,
+        "clearanceId": null
+      },
+      "negotiationStage": "CONFIRMED",
+      "stateRevision": 15,
+      "lastDecisionReason": "Original destination offered an achievable slot.",
+      "lastDecisionSource": "RULES_FALLBACK",
+      "unresolvedReason": null,
+      "proposals": []
+    },
+    {
+      "entityId": "flight:F006",
+      "flightId": "F006",
+      "callsign": "GHOST 006",
+      "position": {
+        "x": 173.36,
+        "y": 48.67
+      },
+      "headingDeg": 248.35,
+      "speedKnots": 240,
+      "fuelRemainingSec": 4370,
+      "phase": "ENROUTE",
+      "priority": "NORMAL",
+      "deadlineSimSec": null,
+      "originalDestination": "CHR",
+      "activeAssignment": {
+        "airportId": "CHR",
+        "runwayId": "R2",
+        "reservationId": "res-CHR-F006",
+        "slotStartSimSec": 780,
+        "occupancySec": 60,
+        "clearanceId": null
+      },
+      "negotiationStage": "CONFIRMED",
+      "stateRevision": 16,
+      "lastDecisionReason": "Original destination offered an achievable slot.",
+      "lastDecisionSource": "RULES_FALLBACK",
+      "unresolvedReason": null,
+      "proposals": []
+    },
+    {
+      "entityId": "flight:F007",
+      "flightId": "F007",
+      "callsign": "GHOST 007",
+      "position": {
+        "x": 50.55,
+        "y": 52.38
+      },
+      "headingDeg": 346.97,
+      "speedKnots": 240,
+      "fuelRemainingSec": 3690,
+      "phase": "HOLDING",
+      "priority": "NORMAL",
+      "deadlineSimSec": null,
+      "originalDestination": "ALP",
+      "activeAssignment": null,
+      "negotiationStage": "COLLECTING",
+      "stateRevision": 17,
+      "lastDecisionReason": "Alpha closed for weather; requesting Bravo and Charlie.",
+      "lastDecisionSource": "RULES_FALLBACK",
+      "unresolvedReason": null,
+      "proposals": []
+    },
+    {
+      "entityId": "flight:F008",
+      "flightId": "F008",
+      "callsign": "GHOST 008",
+      "position": {
+        "x": 111.36,
+        "y": 119.73
+      },
+      "headingDeg": 352.05,
+      "speedKnots": 240,
+      "fuelRemainingSec": 4848,
+      "phase": "ENROUTE",
+      "priority": "NORMAL",
+      "deadlineSimSec": null,
+      "originalDestination": "BRV",
+      "activeAssignment": {
+        "airportId": "BRV",
+        "runwayId": "R2",
+        "reservationId": "res-BRV-F008",
+        "slotStartSimSec": 840,
+        "occupancySec": 60,
+        "clearanceId": null
+      },
+      "negotiationStage": "CONFIRMED",
+      "stateRevision": 18,
+      "lastDecisionReason": "Original destination offered an achievable slot.",
+      "lastDecisionSource": "RULES_FALLBACK",
+      "unresolvedReason": null,
+      "proposals": []
+    },
+    {
+      "entityId": "flight:F009",
+      "flightId": "F009",
+      "callsign": "GHOST 009",
+      "position": {
+        "x": 170,
+        "y": 50
+      },
+      "headingDeg": 180,
+      "speedKnots": 240,
+      "fuelRemainingSec": 4540,
+      "phase": "ENROUTE",
+      "priority": "NORMAL",
+      "deadlineSimSec": null,
+      "originalDestination": "CHR",
+      "activeAssignment": {
+        "airportId": "CHR",
+        "runwayId": "R1",
+        "reservationId": "res-CHR-F009",
+        "slotStartSimSec": 870,
+        "occupancySec": 60,
+        "clearanceId": null
+      },
+      "negotiationStage": "CONFIRMED",
+      "stateRevision": 19,
+      "lastDecisionReason": "Original destination offered an achievable slot.",
+      "lastDecisionSource": "RULES_FALLBACK",
+      "unresolvedReason": null,
+      "proposals": []
+    },
+    {
+      "entityId": "flight:F010",
+      "flightId": "F010",
+      "callsign": "GHOST 010",
+      "position": {
+        "x": 53.48,
+        "y": 45.82
+      },
+      "headingDeg": 219.84,
+      "speedKnots": 240,
+      "fuelRemainingSec": 3441,
+      "phase": "HOLDING",
+      "priority": "NORMAL",
+      "deadlineSimSec": null,
+      "originalDestination": "ALP",
+      "activeAssignment": null,
+      "negotiationStage": "COLLECTING",
+      "stateRevision": 20,
+      "lastDecisionReason": "Alpha closed for weather; requesting Bravo and Charlie.",
+      "lastDecisionSource": "RULES_FALLBACK",
+      "unresolvedReason": null,
+      "proposals": []
+    }
+  ],
+  "incidents": [
+    {
+      "incidentId": "1b2c3d4e-0000-4000-8000-000000000003",
+      "runId": "6a1f0c2e-5b7d-4e8a-9c3f-2d4b6e8f0a1c",
+      "target": "airport:CHR",
+      "kind": "CAPACITY_REDUCED",
+      "parameters": {},
+      "status": "RESOLVED",
+      "revision": 2,
+      "createdAtSimSec": 60,
+      "createdAtWallMs": 1793465964000,
+      "resolvedAtSimSec": 180
+    },
+    {
+      "incidentId": "1b2c3d4e-0000-4000-8000-000000000001",
+      "runId": "6a1f0c2e-5b7d-4e8a-9c3f-2d4b6e8f0a1c",
+      "target": "airport:ALP",
+      "kind": "WEATHER_CLOSED",
+      "parameters": {},
+      "status": "ACTIVE",
+      "revision": 1,
+      "createdAtSimSec": 240,
+      "createdAtWallMs": 1793465982000,
+      "resolvedAtSimSec": null
+    },
+    {
+      "incidentId": "1b2c3d4e-0000-4000-8000-000000000002",
+      "runId": "6a1f0c2e-5b7d-4e8a-9c3f-2d4b6e8f0a1c",
+      "target": "flight:F004",
+      "kind": "SMOKE",
+      "parameters": {},
+      "status": "ACTIVE",
+      "revision": 1,
+      "createdAtSimSec": 300,
+      "createdAtWallMs": 1793465988000,
+      "resolvedAtSimSec": null
+    }
+  ],
+  "commands": [
+    {
+      "runId": "6a1f0c2e-5b7d-4e8a-9c3f-2d4b6e8f0a1c",
+      "commandId": "7c0d9e1f-0000-4000-8000-000000000001",
+      "status": "APPLIED",
+      "incidentId": "1b2c3d4e-0000-4000-8000-000000000003",
+      "code": "OK",
+      "resultingRevision": 1
+    },
+    {
+      "runId": "6a1f0c2e-5b7d-4e8a-9c3f-2d4b6e8f0a1c",
+      "commandId": "7c0d9e1f-0000-4000-8000-000000000002",
+      "status": "APPLIED",
+      "incidentId": "1b2c3d4e-0000-4000-8000-000000000003",
+      "code": "OK",
+      "resultingRevision": 2
+    },
+    {
+      "runId": "6a1f0c2e-5b7d-4e8a-9c3f-2d4b6e8f0a1c",
+      "commandId": "7c0d9e1f-0000-4000-8000-000000000003",
+      "status": "APPLIED",
+      "incidentId": "1b2c3d4e-0000-4000-8000-000000000001",
+      "code": "OK",
+      "resultingRevision": 1
+    },
+    {
+      "runId": "6a1f0c2e-5b7d-4e8a-9c3f-2d4b6e8f0a1c",
+      "commandId": "7c0d9e1f-0000-4000-8000-000000000004",
+      "status": "APPLIED",
+      "incidentId": "1b2c3d4e-0000-4000-8000-000000000002",
+      "code": "OK",
+      "resultingRevision": 1
+    },
+    {
+      "runId": "6a1f0c2e-5b7d-4e8a-9c3f-2d4b6e8f0a1c",
+      "commandId": "7c0d9e1f-0000-4000-8000-000000000005",
+      "status": "SENT",
+      "incidentId": "1b2c3d4e-0000-4000-8000-000000000004",
+      "code": null,
+      "resultingRevision": null
+    }
+  ],
+  "timeline": [
+    {
+      "eventId": "evt-0001",
+      "simTimeSec": 60,
+      "wallTimeMs": 1793465964000,
+      "fromEntityId": "controller",
+      "toEntityId": "airport:CHR",
+      "type": "INCIDENT_CREATE",
+      "summary": "Capacity reduced at Charlie",
+      "status": "APPLIED",
+      "source": "SYSTEM",
+      "correlationId": "7c0d9e1f-0000-4000-8000-000000000001"
+    },
+    {
+      "eventId": "evt-0002",
+      "simTimeSec": 180,
+      "wallTimeMs": 1793465976000,
+      "fromEntityId": "controller",
+      "toEntityId": "airport:CHR",
+      "type": "INCIDENT_CLEAR",
+      "summary": "Capacity restored at Charlie",
+      "status": "APPLIED",
+      "source": "SYSTEM",
+      "correlationId": "7c0d9e1f-0000-4000-8000-000000000002"
+    },
+    {
+      "eventId": "evt-0003",
+      "simTimeSec": 240,
+      "wallTimeMs": 1793465982000,
+      "fromEntityId": "controller",
+      "toEntityId": "airport:ALP",
+      "type": "INCIDENT_CREATE",
+      "summary": "Weather closure at Alpha",
+      "status": "APPLIED",
+      "source": "SYSTEM",
+      "correlationId": "7c0d9e1f-0000-4000-8000-000000000003"
+    },
+    {
+      "eventId": "evt-0004",
+      "simTimeSec": 241,
+      "wallTimeMs": 1793465982100,
+      "fromEntityId": "airport:ALP",
+      "toEntityId": "flight:F001",
+      "type": "RESERVATION_REVOKED",
+      "summary": "Alpha closed for weather; reservation revoked",
+      "status": "APPLIED",
+      "source": "SYSTEM",
+      "correlationId": "neg-F001-1"
+    },
+    {
+      "eventId": "evt-0005",
+      "simTimeSec": 250,
+      "wallTimeMs": 1793465983000,
+      "fromEntityId": "flight:F001",
+      "toEntityId": "airport:ALP",
+      "type": "LANDING_REQUEST",
+      "summary": "GHOST 001 requests landing at Alpha",
+      "status": "PENDING",
+      "source": "RULES_FALLBACK",
+      "correlationId": "neg-F001-2"
+    },
+    {
+      "eventId": "evt-0006",
+      "simTimeSec": 254,
+      "wallTimeMs": 1793465983400,
+      "fromEntityId": "airport:ALP",
+      "toEntityId": "flight:F001",
+      "type": "LANDING_REFUSED",
+      "summary": "Refused: CLOSED (weather)",
+      "status": "REFUSED",
+      "source": "RULES_FALLBACK",
+      "correlationId": "neg-F001-2"
+    },
+    {
+      "eventId": "evt-0007",
+      "simTimeSec": 300,
+      "wallTimeMs": 1793465988000,
+      "fromEntityId": "controller",
+      "toEntityId": "flight:F004",
+      "type": "INCIDENT_CREATE",
+      "summary": "Smoke reported on GHOST 004",
+      "status": "APPLIED",
+      "source": "SYSTEM",
+      "correlationId": "7c0d9e1f-0000-4000-8000-000000000004"
+    },
+    {
+      "eventId": "evt-0008",
+      "simTimeSec": 330,
+      "wallTimeMs": 1793465991000,
+      "fromEntityId": "airport:BRV",
+      "toEntityId": "flight:F004",
+      "type": "LANDING_OFFER",
+      "summary": "Bravo offers R2 at 09:00 sim",
+      "status": "PENDING",
+      "source": "RULES_FALLBACK",
+      "correlationId": "neg-F004-1"
+    },
+    {
+      "eventId": "evt-0009",
+      "simTimeSec": 400,
+      "wallTimeMs": 1793465998000,
+      "fromEntityId": "controller",
+      "toEntityId": "flight:F008",
+      "type": "INCIDENT_CREATE",
+      "summary": "Low fuel on GHOST 008 (sent)",
+      "status": "PENDING",
+      "source": "SYSTEM",
+      "correlationId": "7c0d9e1f-0000-4000-8000-000000000005"
+    }
+  ],
+  "health": {
+    "actors": {
+      "status": "READY",
+      "detail": "Development fixture"
+    },
+    "relay": {
+      "status": "READY",
+      "detail": "Development fixture"
+    },
+    "model": {
+      "status": "DEGRADED",
+      "detail": "Development fixture: rules mode"
+    },
+    "worker": {
+      "status": "READY",
+      "detail": "Development fixture"
+    }
+  },
+  "agentMode": "rules"
+}

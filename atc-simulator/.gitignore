@@ -1,0 +1,15 @@
+node_modules/
+.env
+.env.*
+!.env.example
+.data/
+actors/.durable-actors/
+.durable-actors/
+*.log
+logs/
+test-results/
+playwright-report/
+*.trace.zip
+dist/
+.DS_Store
+relay-tokens*.json

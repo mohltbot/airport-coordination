@@ -1,0 +1,16 @@
+{
+  "name": "@ghost-tower/domain",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./contracts": "./src/contracts.ts",
+    "./public": "./src/public.ts",
+    "./constants": "./src/constants.ts",
+    "./world": "./src/world.ts",
+    "./geometry": "./src/geometry.ts",
+    "./projections": "./src/projections.ts"
+  },
+  "dependencies": {
+    "zod": "4.6.7"
+  }
+}
