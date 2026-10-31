@@ -53,32 +53,40 @@ export interface TokenStore {
 /** Short, non-reversible tag binding saved tokens to one workspace key. */
 export const workspaceFingerprint = (workspaceKey: string) => createHash("sha256").update(workspaceKey).digest("hex").slice(0, 16)
 
-type TokenFile = { version: 1; baseUrl: string; workspaceFingerprint: string; agents: Record<string, TokenRecord> }
+/** Accept either the bare origin (SDK style) or the REST base; return the REST base ending in /v1. */
+export function normalizeRelayBase(url: string): string {
+    const u = url.trim().replace(/\/+$/, "")
+    return u.endsWith("/v1") ? u : `${u}/v1`
+}
+
+type TransportSection = { version: 1; baseUrl: string; workspaceFingerprint: string; identities: Record<string, TokenRecord> }
 
 /**
  * Server-only JSON file, mode 0600, written atomically after every registration so a crash
- * cannot lose a token. Refuses to load tokens bound to another base URL or workspace.
+ * cannot lose a token. This adapter's records live under the `transport` key; every other
+ * top-level key (for example the SDK probe's `baseUrl`/`workspaceId`/`agents`) is preserved, so
+ * one RELAY_TOKEN_STORE_PATH can serve both. Refuses tokens bound to another base URL or workspace.
  */
 export function fileTokenStore(path: string, binding: { baseUrl: string; workspaceKey: string }): TokenStore {
+    const baseUrl = normalizeRelayBase(binding.baseUrl)
     const fp = workspaceFingerprint(binding.workspaceKey)
-    let file: TokenFile = { version: 1, baseUrl: binding.baseUrl, workspaceFingerprint: fp, agents: {} }
-    if (existsSync(path)) {
-        const loaded = JSON.parse(readFileSync(path, "utf8")) as TokenFile
-        if (loaded.baseUrl !== binding.baseUrl || loaded.workspaceFingerprint !== fp)
-            throw new Error(`token store ${path} belongs to another Relay workspace or base URL; move it aside or set RELAY_TOKEN_STORE_PATH`)
-        file = loaded
-    }
+    const readFile = (): Record<string, unknown> => (existsSync(path) ? (JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>) : {})
+    const existing = readFile().transport as TransportSection | undefined
+    if (existing && (normalizeRelayBase(existing.baseUrl) !== baseUrl || existing.workspaceFingerprint !== fp))
+        throw new Error(`token store ${path} holds identities for another Relay workspace or base URL; move it aside or set RELAY_TOKEN_STORE_PATH`)
+    const section: TransportSection = existing ?? { version: 1, baseUrl, workspaceFingerprint: fp, identities: {} }
     const save = () => {
         mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
         const tmp = `${path}.${process.pid}.tmp`
-        writeFileSync(tmp, JSON.stringify(file, null, 2), { mode: 0o600 })
+        // Re-read so a concurrent writer's other keys survive.
+        writeFileSync(tmp, JSON.stringify({ ...readFile(), transport: section }, null, 2), { mode: 0o600 })
         renameSync(tmp, path)
         chmodSync(path, 0o600)
     }
     return {
-        get: handle => file.agents[handle] ?? null,
+        get: handle => section.identities[handle] ?? null,
         put: record => {
-            file.agents[record.handle] = record
+            section.identities[record.handle] = record
             save()
         },
     }
@@ -97,7 +105,9 @@ export class RelaycastRest {
     constructor(
         readonly baseUrl: string,
         private readonly fetchImpl: Fetch = fetch,
-    ) {}
+    ) {
+        this.baseUrl = normalizeRelayBase(baseUrl)
+    }
 
     async call<T = any>(path: string, opts: { method?: string; token: string; body?: unknown; idempotencyKey?: string }): Promise<T> {
         let res: Response

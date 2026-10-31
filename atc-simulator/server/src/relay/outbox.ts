@@ -67,23 +67,42 @@ export function selectDue(entityId: EntityId, entries: OutboxEntry[], nowMs: num
     return { due, expired }
 }
 
-const inFlight = new WeakMap<object, Set<string>>()
+// Per-transport memory of sends in flight and the retry schedule. The persisted entry is the
+// durable record, but an actor may persist only the transport receipt and the caller may build
+// a new OutboxPort each pass, so the schedule is also kept here (keyed by the long-lived
+// transport) and the later of the two times wins. After a restart the persisted times apply.
+type DispatchMemory = { flying: Set<string>; schedule: Map<string, { attempts: number; nextAt: number }> }
+const memories = new WeakMap<object, DispatchMemory>()
+const memoryFor = (key: object) => {
+    let m = memories.get(key)
+    if (!m) memories.set(key, (m = { flying: new Set(), schedule: new Map() }))
+    return m
+}
 
 /** One dispatcher pass over every entity's durable outbox. */
 export async function dispatchDueOutboxes(ctx: DispatchContext): Promise<DispatchReport> {
     const now = ctx.now ?? Date.now
-    const flying = inFlight.get(ctx.outbox) ?? new Set<string>()
-    inFlight.set(ctx.outbox, flying)
+    const { flying, schedule } = memoryFor(ctx.transport)
     const report: DispatchReport = { due: 0, sent: 0, failed: 0, skipped: 0 }
 
     const work: { entityId: EntityId; entry: OutboxEntry }[] = []
+    const listed = new Set<string>()
     for (const entityId of await ctx.outbox.entities()) {
-        const { due, expired } = selectDue(entityId, await ctx.outbox.list(entityId), now())
+        const entries = await ctx.outbox.list(entityId)
+        for (const e of entries) if (!e.acknowledged) listed.add(e.envelope.messageId)
+        const { due, expired } = selectDue(entityId, entries, now())
         report.skipped += expired.length
         for (const e of expired)
             ctx.log?.({ entityId, messageId: e.envelope.messageId, type: e.envelope.type, attempt: e.attemptCount, outcome: "SKIPPED_EXPIRED", transportMessageId: e.transportMessageId, code: null, sendMs: 0 })
-        for (const entry of due) if (!flying.has(entry.envelope.messageId)) work.push({ entityId, entry })
+        for (const entry of due) {
+            const id = entry.envelope.messageId
+            const mem = schedule.get(id)
+            if (flying.has(id) || (mem && mem.nextAt > now())) continue
+            work.push({ entityId, entry: mem && mem.attempts > entry.attemptCount ? { ...entry, attemptCount: mem.attempts } : entry })
+        }
     }
+    // Acknowledged entries drop out of the listing; forget their schedule.
+    for (const id of schedule.keys()) if (!listed.has(id) && !flying.has(id)) schedule.delete(id)
     report.due = work.length
 
     const limit = Math.max(1, ctx.concurrency ?? 6)
@@ -97,7 +116,9 @@ export async function dispatchDueOutboxes(ctx: DispatchContext): Promise<Dispatc
             const t0 = now()
             try {
                 const { transportMessageId } = await ctx.transport.send(entry.envelope)
-                await ctx.outbox.recordAttempt(entityId, { messageId: id, transportMessageId, attemptCount: attempt, nextAttemptAtWallMs: now() + retryDelayMs(ctx.timing, attempt) })
+                const nextAt = now() + retryDelayMs(ctx.timing, attempt)
+                schedule.set(id, { attempts: attempt, nextAt })
+                await ctx.outbox.recordAttempt(entityId, { messageId: id, transportMessageId, attemptCount: attempt, nextAttemptAtWallMs: nextAt })
                 report.sent++
                 ctx.log?.({ entityId, messageId: id, type: entry.envelope.type, attempt, outcome: "SENT", transportMessageId, code: null, sendMs: now() - t0 })
             } catch (err) {
@@ -105,6 +126,7 @@ export async function dispatchDueOutboxes(ctx: DispatchContext): Promise<Dispatc
                 // Non-retryable (malformed or oversized) entries back off at the steady rate so they
                 // stay visible without hammering Relay; the owning actor decides what to do with them.
                 const delay = err instanceof RelayTransportError && !err.retryable ? ctx.timing.ackRetrySteadyMs : retryDelayMs(ctx.timing, attempt)
+                schedule.set(id, { attempts: attempt, nextAt: now() + delay })
                 await ctx.outbox
                     .recordAttempt(entityId, { messageId: id, transportMessageId: entry.transportMessageId, attemptCount: attempt, nextAttemptAtWallMs: now() + delay })
                     .catch(() => {})

@@ -13,7 +13,7 @@ import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { AIRPORT_IDS } from "../packages/domain/src/constants.ts"
 import { RunIdSchema, airportEntityId, flightEntityId, type EntityId } from "../packages/domain/src/contracts.ts"
-import { DEFAULT_RELAY_BASE_URL, HostedRelayTransport, fileTokenStore } from "../server/src/relay/agent-relay.ts"
+import { DEFAULT_RELAY_BASE_URL, HostedRelayTransport, fileTokenStore, normalizeRelayBase } from "../server/src/relay/agent-relay.ts"
 import { registrationsFor, runChannelName } from "../server/src/relay/transport.ts"
 
 const ENV_PATH = resolve(import.meta.dir, "../.env")
@@ -52,7 +52,7 @@ function writeEnv(updates: Record<string, string>) {
 }
 
 const env = readEnv()
-const baseUrl = env.get("RELAY_BASE_URL") || DEFAULT_RELAY_BASE_URL
+const baseUrl = normalizeRelayBase(env.get("RELAY_BASE_URL") || DEFAULT_RELAY_BASE_URL)
 let workspaceKey = env.get("RELAY_WORKSPACE_KEY") || ""
 const storePath = env.get("RELAY_TOKEN_STORE_PATH") || ".data/relay-tokens.json"
 

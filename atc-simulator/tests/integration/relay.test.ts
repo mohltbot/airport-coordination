@@ -4,7 +4,7 @@
 // The live test creates its own throwaway Relaycast workspace, so it never touches the team's
 // coding-agent workspace or the demo workspace in .env.
 import { afterAll, describe, expect, test } from "bun:test"
-import { mkdtempSync, readFileSync, rmSync } from "node:fs"
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
@@ -16,7 +16,7 @@ import {
     type ReceivedEnvelope,
 } from "../../packages/domain/src/contracts.ts"
 import { RELAY_TIMING } from "../../packages/domain/src/constants.ts"
-import { DEFAULT_RELAY_BASE_URL, HostedRelayTransport, RelaycastRest, fileTokenStore } from "../../server/src/relay/agent-relay.ts"
+import { DEFAULT_RELAY_BASE_URL, HostedRelayTransport, RelaycastRest, fileTokenStore, normalizeRelayBase } from "../../server/src/relay/agent-relay.ts"
 import { dispatchDueOutboxes, selectDue } from "../../server/src/relay/outbox.ts"
 import { attachRouter, buildDomainAck, commandProof, routeReceived, type RouteEvent, type RouterContext } from "../../server/src/relay/router.ts"
 import {
@@ -254,6 +254,50 @@ describe("relay contract (loopback)", () => {
         expect([...inbox.received.keys()].filter(k => k.startsWith("controller|")).length).toBe(1)
     })
 
+    test("outbox does not resend before the backoff when the port drops retry times and is rebuilt each pass", async () => {
+        const transport = new LoopbackRelayTransport()
+        await transport.connect(RUN, registry)
+        let clock = 2_000_000
+        const req = landingRequest(RUN)
+        const persisted: OutboxEntry = { envelope: req, recipientHandle: entityHandle(RUN, ALP), attemptCount: 0, nextAttemptAtWallMs: 0, transportMessageId: null, acknowledged: false }
+        // Like the actor's markTransportAccepted today: only the transport receipt is stored.
+        const port = (): OutboxPort => ({
+            entities: async () => [F001],
+            list: async () => [persisted],
+            recordAttempt: async (_id, a) => void (persisted.transportMessageId = a.transportMessageId),
+        })
+        const pass = () => dispatchDueOutboxes({ transport, outbox: port(), timing: RELAY_TIMING.HOSTED, now: () => clock })
+        expect((await pass()).sent).toBe(1)
+        clock += 250
+        expect((await pass()).sent).toBe(0) // in-memory schedule holds it for 5 s
+        clock += 5_000
+        expect((await pass()).sent).toBe(1) // second attempt after the first HOSTED backoff
+        clock += 5_000
+        expect((await pass()).sent).toBe(0) // next backoff is 10 s
+        persisted.acknowledged = true
+        clock += 60_000
+        expect((await pass()).sent).toBe(0)
+        expect(transport.sent.length).toBe(2)
+    })
+
+    test("token store shares a file with the SDK probe, accepts a bare origin, and refuses another workspace", () => {
+        const dir = mkdtempSync(join(tmpdir(), "ghost-store-"))
+        try {
+            const path = join(dir, "relay-tokens.json")
+            writeFileSync(path, JSON.stringify({ baseUrl: "https://cast.agentrelay.com", workspaceId: "w1", agents: { "ghost-probe-a": "probe-token" } }))
+            const store = fileTokenStore(path, { baseUrl: "https://cast.agentrelay.com", workspaceKey: "key-1" })
+            store.put({ handle: "ghost-x-controller", agentId: "1", token: "t", channels: [], registeredAtWallMs: 0 })
+            const file = JSON.parse(readFileSync(path, "utf8"))
+            expect(file.agents["ghost-probe-a"]).toBe("probe-token") // probe keys untouched
+            expect(file.transport.baseUrl).toBe("https://cast.agentrelay.com/v1")
+            expect(fileTokenStore(path, { baseUrl: "https://cast.agentrelay.com/v1/", workspaceKey: "key-1" }).get("ghost-x-controller")?.token).toBe("t")
+            expect(() => fileTokenStore(path, { baseUrl: "https://cast.agentrelay.com/v1", workspaceKey: "key-2" })).toThrow()
+            expect(normalizeRelayBase("https://cast.agentrelay.com")).toBe("https://cast.agentrelay.com/v1")
+        } finally {
+            rmSync(dir, { recursive: true, force: true })
+        }
+    })
+
     test("outbox sends due entries, keeps them un-acknowledged, backs off on the HOSTED profile, and holds later commands per target", async () => {
         const transport = new LoopbackRelayTransport()
         await transport.connect(RUN, registry)
@@ -352,7 +396,7 @@ describe.skipIf(!LIVE)("relay live (hosted Relaycast)", () => {
             //    new idempotency key gets a new transport ID and still has exactly one effect.
             const again = await t1.send(env)
             expect(again.transportMessageId).toBe(transportMessageId)
-            const tokens = JSON.parse(readFileSync(storePath, "utf8")).agents
+            const tokens = JSON.parse(readFileSync(storePath, "utf8")).transport.identities
             const rest = new RelaycastRest(BASE)
             const post = (handle: string, text: string, to: string) =>
                 rest.call(`/channels/${runChannelName(runId)}/messages`, { token: tokens[handle].token, body: { text, data: { to } }, idempotencyKey: crypto.randomUUID() })
