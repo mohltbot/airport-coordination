@@ -551,3 +551,5 @@
 .map-svg {
   overflow: hidden;
 }
+
+.inspector-flight-state { margin-bottom: 24px; }

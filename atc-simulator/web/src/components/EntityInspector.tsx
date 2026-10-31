@@ -49,63 +49,8 @@ export function EntityInspector({
         <h2>{airport?.airportId ?? flight?.callsign}</h2>
         <p>{airport?.name ?? flight?.flightId}</p>
       </header>
-      <div className="comm-tabs" role="tablist" aria-label="Entity details">
-        {["Communications", "State", "Controls"].map((name, index, tabs) => (
-          <button key={name} id={`entity-tab-${name}`} role="tab" aria-selected={tab === name}
-            aria-controls={`entity-panel-${name}`} tabIndex={tab === name ? 0 : -1}
-            onClick={() => setTab(name)} onKeyDown={(event) => {
-              const next = event.key === "ArrowRight" ? tabs[(index + 1) % tabs.length] : event.key === "ArrowLeft" ? tabs[(index + tabs.length - 1) % tabs.length] : event.key === "Home" ? tabs[0] : event.key === "End" ? tabs[tabs.length - 1] : undefined;
-              if (next) { event.preventDefault(); setTab(next); document.getElementById(`entity-tab-${next}`)?.focus(); }
-            }}>{name}</button>
-        ))}
-      </div>
-      <section role="tabpanel" id={`entity-panel-${tab}`} aria-labelledby={`entity-tab-${tab}`} className="comm-panel">
-      {tab === "Communications" && <Communications key={selectedId} snapshot={snapshot} selectedId={selectedId!} />}
-      {tab === "State" && <>
-      {airport && (
-        <>
-          <div className="inspector-status">{airport.status}</div>
-          {airport.statusReason && <p>{airport.statusReason}</p>}
-          <h3>Runways</h3>
-          <ul className="inspector-runways">
-            {airport.runways.map((r) => (
-              <li key={r.runwayId}>
-                <strong>{r.runwayId}</strong>
-                <span>{r.status}</span>
-                {r.occupiedUntilSimSec !== null && (
-                  <small>Until {clock(r.occupiedUntilSimSec)} sim</small>
-                )}
-              </li>
-            ))}
-          </ul>
-          <h3>
-            Arrival queue <span>({airport.queue.length})</span>
-          </h3>
-          {airport.queue.length ? (
-            <ol className="inspector-queue">
-              {airport.queue.map((q) => (
-                <li key={q.reservationId}>
-                  <strong>
-                    {snapshot.flights.find((f) => f.flightId === q.flightId)
-                      ?.callsign ?? q.flightId}
-                  </strong>
-                  <span>
-                    {q.runwayId} · {clock(q.slotStartSimSec)} sim
-                  </span>
-                  <small>
-                    {q.priority === "EMERGENCY" ? "! Emergency · " : ""}
-                    {q.status}
-                  </small>
-                </li>
-              ))}
-            </ol>
-          ) : (
-            <p className="inspector-muted">No queued arrivals.</p>
-          )}
-        </>
-      )}
       {flight && (
-        <>
+        <section className="inspector-flight-state" aria-label="Flight state">
           <div
             className={`inspector-status ${flight.priority === "EMERGENCY" ? "inspector-emergency" : ""}`}
           >
@@ -199,6 +144,62 @@ export function EntityInspector({
                 ))}
               </ul>
             </>
+          )}
+        </section>
+      )}
+
+      <div className="comm-tabs" role="tablist" aria-label="Entity details">
+        {(flight ? ["Communications", "Controls"] : ["Communications", "State", "Controls"]).map((name, index, tabs) => (
+          <button key={name} id={`entity-tab-${name}`} role="tab" aria-selected={tab === name}
+            aria-controls={`entity-panel-${name}`} tabIndex={tab === name ? 0 : -1}
+            onClick={() => setTab(name)} onKeyDown={(event) => {
+              const next = event.key === "ArrowRight" ? tabs[(index + 1) % tabs.length] : event.key === "ArrowLeft" ? tabs[(index + tabs.length - 1) % tabs.length] : event.key === "Home" ? tabs[0] : event.key === "End" ? tabs[tabs.length - 1] : undefined;
+              if (next) { event.preventDefault(); setTab(next); document.getElementById(`entity-tab-${next}`)?.focus(); }
+            }}>{name}</button>
+        ))}
+      </div>
+      <section role="tabpanel" id={`entity-panel-${tab}`} aria-labelledby={`entity-tab-${tab}`} className="comm-panel">
+      {tab === "Communications" && <Communications key={selectedId} snapshot={snapshot} selectedId={selectedId!} />}
+      {tab === "State" && <>
+      {airport && (
+        <>
+          <div className="inspector-status">{airport.status}</div>
+          {airport.statusReason && <p>{airport.statusReason}</p>}
+          <h3>Runways</h3>
+          <ul className="inspector-runways">
+            {airport.runways.map((r) => (
+              <li key={r.runwayId}>
+                <strong>{r.runwayId}</strong>
+                <span>{r.status}</span>
+                {r.occupiedUntilSimSec !== null && (
+                  <small>Until {clock(r.occupiedUntilSimSec)} sim</small>
+                )}
+              </li>
+            ))}
+          </ul>
+          <h3>
+            Arrival queue <span>({airport.queue.length})</span>
+          </h3>
+          {airport.queue.length ? (
+            <ol className="inspector-queue">
+              {airport.queue.map((q) => (
+                <li key={q.reservationId}>
+                  <strong>
+                    {snapshot.flights.find((f) => f.flightId === q.flightId)
+                      ?.callsign ?? q.flightId}
+                  </strong>
+                  <span>
+                    {q.runwayId} · {clock(q.slotStartSimSec)} sim
+                  </span>
+                  <small>
+                    {q.priority === "EMERGENCY" ? "! Emergency · " : ""}
+                    {q.status}
+                  </small>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className="inspector-muted">No queued arrivals.</p>
           )}
         </>
       )}
