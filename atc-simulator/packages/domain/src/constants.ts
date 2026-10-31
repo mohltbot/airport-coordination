@@ -17,7 +17,7 @@ export const DEFAULT_SPEED = 10
 // World
 export const MAP_WIDTH_NM = 240
 export const MAP_HEIGHT_NM = 160
-export const AIRPORT_IDS = ["ALP", "BRV", "CHR", "ATL", "DFW", "DEN", "ORD", "LAX", "JFK", "CLT", "LAS", "MCO", "MIA", "SFO", "OAK", "SJC", "MRY"] as const
+export const AIRPORT_IDS = ["ALP", "BRV", "CHR", "ATL", "DFW", "DEN", "ORD", "LAX", "JFK", "CLT", "LAS", "MCO", "MIA", "SFO", "OAK", "SJC", "MRY", "EWR", "LGA"] as const
 export const RUNWAY_IDS = ["R1", "R2"] as const
 export const AIRPORTS = [
     { airportId: "ALP", name: "Alpha", position: { x: 50, y: 50 } },
@@ -192,6 +192,30 @@ export const US_AIRPORTS = [
         "position": {
             "x": 23.5187,
             "y": 79.3715
+        }
+    },
+    {
+        "airportId": "EWR",
+        "name": "Newark Liberty International Airport",
+        "city": "Newark",
+        "latitude": 40.6894,
+        "longitude": -74.170545,
+        "rank": null,
+        "position": {
+            "x": 197.5275,
+            "y": 60.2943
+        }
+    },
+    {
+        "airportId": "LGA",
+        "name": "LaGuardia Airport",
+        "city": "New York",
+        "latitude": 40.777199,
+        "longitude": -73.872597,
+        "rank": null,
+        "position": {
+            "x": 198.615,
+            "y": 59.886
         }
     }
 ] as const

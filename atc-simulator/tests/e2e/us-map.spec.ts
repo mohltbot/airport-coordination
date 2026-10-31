@@ -2,10 +2,10 @@ import { test, expect } from '@playwright/test';
 import { bootstrap, harness } from './harness';
 import { usPreviewSnapshot } from '../../web/src/dev/us-preview';
 
-test('US map shows fourteen real towers and opens airport communications', async ({ page }) => {
+test('US map shows sixteen real towers and opens airport communications', async ({ page }) => {
   const h = await harness(page, bootstrap(structuredClone(usPreviewSnapshot), 'VIEWER'));
   await h.open('/');
-  await expect(page.locator('.national-airport')).toHaveCount(14);
+  await expect(page.locator('.national-airport')).toHaveCount(16);
   await expect(page.locator('.national-states path')).toHaveCount(49);
   await expect(page.locator('.national-assignment[data-flight-id]')).toHaveCount(usPreviewSnapshot.flights.filter(f => f.activeAssignment && !['LANDED','UNRESOLVED'].includes(f.phase)).length);
   const atl = page.locator('.national-airport').filter({ has: page.locator('title', { hasText: 'Hartsfield' }) });
@@ -81,3 +81,14 @@ test('national view hides flight badges and airport labels only show codes', asy
   await page.getByRole('button', {name:'Reset map view'}).click();
   await expect(page.locator('.national-label:not(.is-airport)')).toHaveCount(0);
 });
+
+ test('New York regional view exposes JFK, Newark and LaGuardia', async ({ page }) => {
+  const h = await harness(page, bootstrap(structuredClone(usPreviewSnapshot), 'VIEWER'));
+  await h.open('/');
+  await page.getByLabel('Map region').selectOption('northeast');
+  for (const code of ['JFK', 'EWR', 'LGA']) {
+    await expect(page.getByRole('button', { name: `Select ${code}`, exact: true })).toBeVisible();
+  }
+  await page.getByRole('button', { name: 'Select EWR', exact: true }).click();
+  await expect(page.locator('.inspector-header')).toContainText('Newark Liberty International Airport');
+ });
