@@ -17,7 +17,14 @@
     "actors:generate": "bun scripts/actors-generate.ts",
     "check": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p actors/tsconfig.json",
     "test:unit": "bun test tests/unit",
-    "test:integration": "bun scripts/test-integration.ts"
+    "test:integration": "bun scripts/test-integration.ts",
+    "dev": "bun scripts/dev.ts",
+    "dev:fixture": "GHOST_TOWER_DEV_FIXTURE=1 bun scripts/dev.ts",
+    "build": "bun run --cwd web build",
+    "start": "bun scripts/dev.ts --prod",
+    "server": "bun server/src/main.ts",
+    "demo:operator-link": "bun scripts/operator-link.ts",
+    "demo:reset": "bun scripts/demo-reset.ts"
   },
   "dependencies": {
     "zod": "4.6.7"
