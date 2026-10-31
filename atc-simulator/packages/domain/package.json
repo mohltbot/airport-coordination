@@ -8,7 +8,10 @@
     "./constants": "./src/constants.ts",
     "./world": "./src/world.ts",
     "./geometry": "./src/geometry.ts",
-    "./projections": "./src/projections.ts"
+    "./projections": "./src/projections.ts",
+    "./incidents": "./src/incidents.ts",
+    "./command-ledger": "./src/command-ledger.ts",
+    "./stable-id": "./src/stable-id.ts"
   },
   "dependencies": {
     "zod": "4.6.7"
