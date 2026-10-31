@@ -1,12 +1,12 @@
 # National map and continuous traffic
 
-User requirements: all ten busiest US airports active, real map and names, regional zoom including the Bay Area, and ongoing flights departing from airports. This feature is prepared on `codex/us-map`; it must not silently replace the partner's active integration run.
+User requirements: all ten busiest US airports plus SFO, OAK and SJC active, real map and names, regional zoom including the Bay Area, and ongoing flights departing from airports. This feature is prepared on `codex/us-map`; it must not silently replace the partner's active integration run.
 
 ## Geographic and compatibility contract
 
-Airport ranking and boundary provenance: [MAP-SOURCES.md](MAP-SOURCES.md). Real geography is compressed into the existing simulation space, preserving demo fuel and emergency timing. These coordinates are not real nautical-mile distances. Only snapshot airports appear as active towers; regional cities are map context. Bay Area geography can be explored, but SFO/OAK/SJC are not among the pinned top ten.
+Airport ranking and boundary provenance: [MAP-SOURCES.md](MAP-SOURCES.md). Real geography is compressed into the existing simulation space, preserving demo fuel and emergency timing. These coordinates are not real nautical-mile distances. Only snapshot airports appear as active towers; regional cities are map context. SFO, OAK and SJC are additional active towers in the Bay Area; they are not represented as members of the pinned top-ten ranking.
 
-`RunConfig.airportNetwork` is optional: `US` opts into the ten-airport world; absent or `LEGACY` retains the original three-airport world. The schema accepts both sets of IDs. World creation, actor registration, pilot directories and flight geometry choose the correct directory. A new UI run defaults to US, while existing runs retain their persisted network. A negotiation still contacts at most three candidates.
+`RunConfig.airportNetwork` is optional: `US` opts into the thirteen-airport world; absent or `LEGACY` retains the original three-airport world. The schema accepts both sets of IDs. World creation, actor registration, pilot directories and flight geometry choose the correct directory. A new UI run defaults to US, while existing runs retain their persisted network. A negotiation still contacts at most three candidates.
 
 ## Continuous traffic design
 

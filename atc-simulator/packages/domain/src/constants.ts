@@ -17,7 +17,7 @@ export const DEFAULT_SPEED = 10
 // World
 export const MAP_WIDTH_NM = 240
 export const MAP_HEIGHT_NM = 160
-export const AIRPORT_IDS = ["ALP", "BRV", "CHR", "ATL", "DFW", "DEN", "ORD", "LAX", "JFK", "CLT", "LAS", "MCO", "MIA"] as const
+export const AIRPORT_IDS = ["ALP", "BRV", "CHR", "ATL", "DFW", "DEN", "ORD", "LAX", "JFK", "CLT", "LAS", "MCO", "MIA", "SFO", "OAK", "SJC"] as const
 export const RUNWAY_IDS = ["R1", "R2"] as const
 export const AIRPORTS = [
     { airportId: "ALP", name: "Alpha", position: { x: 50, y: 50 } },
@@ -144,6 +144,42 @@ export const US_AIRPORTS = [
         "position": {
             "x": 175.1924,
             "y": 129.5485
+        }
+    },
+    {
+        "airportId": "SFO",
+        "name": "San Francisco International Airport",
+        "city": "San Francisco",
+        "latitude": 37.619806,
+        "longitude": -122.374821,
+        "rank": null,
+        "position": {
+            "x": 21.5819,
+            "y": 74.5679
+        }
+    },
+    {
+        "airportId": "OAK",
+        "name": "Oakland San Francisco Bay Airport",
+        "city": "Oakland",
+        "latitude": 37.720085,
+        "longitude": -122.221184,
+        "rank": null,
+        "position": {
+            "x": 22.1427,
+            "y": 74.1016
+        }
+    },
+    {
+        "airportId": "SJC",
+        "name": "Mineta San Jose International Airport",
+        "city": "San Jose",
+        "latitude": 37.362452,
+        "longitude": -121.929188,
+        "rank": null,
+        "position": {
+            "x": 23.2085,
+            "y": 75.7646
         }
     }
 ] as const
