@@ -6,10 +6,10 @@ import { loadConfig } from "../server/src/config.ts"
 
 const config = loadConfig()
 const base = `http://127.0.0.1:${config.port}`
-const origin = `http://localhost:${config.port}`
 
 async function call(path: string, init: RequestInit = {}) {
-    const res = await fetch(`${base}${path}`, { ...init, headers: { "content-type": "application/json", origin, ...init.headers } })
+    // No Origin header: a non-browser client is still bound by the session and CSRF token.
+    const res = await fetch(`${base}${path}`, { ...init, headers: { "content-type": "application/json", ...init.headers } })
     const body = (await res.json().catch(() => null)) as any
     if (!res.ok) throw new Error(`${path} -> ${res.status} ${body?.error?.code ?? ""} ${body?.error?.message ?? ""}`.trim())
     return { res, body }
