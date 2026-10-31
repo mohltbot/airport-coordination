@@ -47,7 +47,7 @@
 @media (max-width: 767px) { .national-map-heading { align-items: flex-start; padding: 16px; gap: 10px; }.national-map-heading p span { display: block; }.national-map-svg { min-height: 390px; }.national-map-footer { padding: 14px 16px; gap: 10px 16px; }.national-scale { margin-left: 0; width: 100%; }.national-map-zoom button { min-width: 44px; padding: 0 6px; } }
 @media (prefers-reduced-motion: reduce) { .national-label > rect { transition: none; } }
 .national-map-tools { display:flex; align-items:center; gap:10px; }
-.national-region select { min-height:44px; max-width:150px; padding:0 10px; border:0; border-radius:7px; background:#20262e; color:#e9edf3; font:500 12px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+.national-region select { min-height:44px; max-width:100%; padding:0 10px; border:0; border-radius:7px; background:#20262e; color:#e9edf3; font:500 12px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
 .national-region select:focus-visible { outline:2px solid #8ccfff; outline-offset:2px; }
 .national-sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
 .national-map-svg { touch-action:none; cursor:grab; }
@@ -56,7 +56,7 @@
 .national-context-cities { pointer-events:none; }
 .national-context-cities circle { fill:#b0bfc8; }
 .national-context-cities text { fill:#dce6ed; font:12px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; paint-order:stroke; stroke:#0b1015; stroke-width:3px; stroke-linejoin:round; }
-@media(max-width:767px) { .national-map-heading { flex-wrap:wrap; }.national-map-tools { width:100%; justify-content:space-between; }.national-region select { max-width:180px; } }
+@media(max-width:767px) { .national-map-heading { flex-wrap:wrap; }.national-map-tools { width:100%; justify-content:space-between; }.national-region select { max-width:100%; } }
 @media(max-width:580px) { .national-place-labels { display: none; } }
 .national-label.is-featured > rect { stroke:#9cd8ef; stroke-width:1.5; }
 .national-label.is-featured:not(.is-emergency) text { fill:#c5edff; }
