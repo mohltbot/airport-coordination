@@ -46,7 +46,11 @@ export interface EntityWorkApi {
     commitDecision(context: MutationContext, commit: DecisionCommit): Promise<DomainResult>
     /** Persist a transport receipt and the next retry time (OutboxPort.recordAttempt). */
     markTransportAccepted(context: MutationContext, attempt: OutboxAttempt): Promise<void>
+    /** Negotiation timing for the transport profile and run speed, plus IMMEDIATE/JOB decisions. */
+    configureNegotiation?(context: MutationContext, options: NegotiationSettings): Promise<DomainResult>
 }
+
+export type NegotiationSettings = { profile: "HOSTED" | "LOCAL"; speed: 1 | 5 | 10; decisionMode: "IMMEDIATE" | "JOB" }
 
 export type OutboxAttempt = { messageId: string; transportMessageId: string | null; attemptCount: number; nextAttemptAtWallMs: number }
 
@@ -55,6 +59,8 @@ export interface WorkerRepository extends SimulationRepository {
     flight(runId: string, flightId: string): FlightSimApi & EntityWorkApi
     /** Registered entity IDs of the run (airports, flights, controller). */
     entities(runId: string): Promise<EntityId[]>
+    /** Current run speed (1, 5 or 10), for negotiation timing. */
+    runSpeed?(runId: string): Promise<number>
     /** Controller ledger inbox (COMMAND_RESULT, DOMAIN_ACK addressed to the controller). */
     receiveController?(lease: WorkerLease, message: ReceivedEnvelope): Promise<DomainResult>
     /** Controller ledger outbox in SimulationActor (INCIDENT_* commands). */
@@ -82,6 +88,8 @@ export type WorkerDeps = {
     log?: (line: string) => void
     now?: () => number
     ownerId?: string
+    /** Transport profile and decision mode pushed to every entity with the run speed. */
+    negotiation?: Omit<NegotiationSettings, "speed">
     tickIntervalMs?: number
     renewIntervalMs?: number
 }
@@ -226,6 +234,18 @@ export class SimulationWorker {
             },
         })
 
+        // Push timing/decision mode to every entity at lease start and on speed changes.
+        let configuredSpeed: number | null = null
+        const configure = async (speed: number) => {
+            const negotiation = this.deps.negotiation
+            if (!negotiation || speed === configuredSpeed || (speed !== 1 && speed !== 5 && speed !== 10)) return
+            const ctx = this.context(lease, `configure:${lease.epoch}:${speed}`)
+            await Promise.all(agentIds.map(id => entityApi(repo, runId, id).configureNegotiation?.(ctx, { ...negotiation, speed })))
+            configuredSpeed = speed
+            this.log(`negotiation configured: ${negotiation.profile} ${negotiation.decisionMode} speed ${speed}`)
+        }
+        if (repo.runSpeed) await configure(await repo.runSpeed(runId))
+
         await new Promise<void>(resolve => {
             const timers: ReturnType<typeof setInterval>[] = []
             let ended = false
@@ -253,6 +273,7 @@ export class SimulationWorker {
                         const outcome = await runTick(repo, lease)
                         if (ended) return
                         if (outcome) {
+                            await configure(Math.round((outcome.tick.toSimSec - outcome.tick.fromSimSec) / (SCHEDULER_INTERVAL_MS / 1000)))
                             this.setStatus({ state: "RUNNING", detail: null, simNowSec: outcome.tick.toSimSec })
                             await this.deps.publish?.(lease, outcome, this.status)
                         } else {
@@ -369,12 +390,8 @@ async function main() {
     const env = process.env
     const log = (line: string) => console.log(`${new Date().toISOString()} ${line}`)
 
-    const actorsModule: Record<string, unknown> = await load("../actors.ts").catch(err => {
-        throw new Error(`server/src/actors.ts (Task 2 ActorRepository) is not available yet: ${errText(err)}`)
-    })
-    const createRepo = (actorsModule.createWorkerRepository ?? actorsModule.createActorRepository) as ((e: typeof env) => WorkerRepository) | undefined
-    if (typeof createRepo !== "function") throw new Error("server/src/actors.ts must export createWorkerRepository(env) returning a WorkerRepository")
-    const repo = createRepo(env)
+    const { loadWorkerRepository } = await import("./repository.ts")
+    const repo = await loadWorkerRepository(env)
 
     const { chooseValidAction } = await import("../../../packages/domain/src/policy.ts")
     const { createAgentModel } = await import("../agents/model.ts")
@@ -428,6 +445,10 @@ async function main() {
         fallback: chooseValidAction,
         transport,
         commandSecret: env.COMMAND_SIGNING_SECRET ?? null,
+        negotiation: {
+            profile: env.RELAY_PROFILE === "LOCAL" ? "LOCAL" : "HOSTED",
+            decisionMode: env.GHOST_DECISION_MODE === "IMMEDIATE" || env.GHOST_DECISION_MODE === "JOB" ? env.GHOST_DECISION_MODE : env.AGENT_MODE === "live" ? "JOB" : "IMMEDIATE",
+        },
         dispatchOutboxes,
         publish,
         log,

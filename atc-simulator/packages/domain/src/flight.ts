@@ -82,7 +82,8 @@ export function clearanceDue(state: FlightState, nowSimSec: number): boolean {
     if (!a || a.clearanceId !== null || isTerminalPhase(state.phase)) return false
     const d = distanceNm(state.position, AIRPORT_POSITION[a.airportId])
     if (d > APPROACH_RADIUS_NM + EPS_NM) return false
-    return a.slotStartSimSec - nowSimSec <= secondsToRunway(state, a.airportId) + CLEARANCE_LEAD_SEC + EPS_SEC
+    // Same comparison as negotiation.buildPilotView, so the rules policy agrees the window is open.
+    return a.slotStartSimSec - nowSimSec <= secondsToRunway(state, a.airportId) + CLEARANCE_LEAD_SEC
 }
 
 // The current travel can no longer reach the runway inside [slotStart, slotStart+grace].
@@ -365,7 +366,11 @@ export function advanceFlight(
 
     if (clearanceDue(next, tick.toSimSec)) {
         const jobId = `clearance-${next.activeAssignment!.reservationId}`.slice(0, 128)
-        if (!next.jobs[jobId]) {
+        const existing = next.jobs[jobId]
+        // Re-queue when the earlier job ended without sending the request (cancelled,
+        // failed, or the policy chose HOLD), since the clearance is still missing.
+        const spent = existing && (existing.status === "CANCELLED" || existing.status === "FAILED" || (existing.status === "COMMITTED" && existing.outcome?.action !== "REQUEST_CLEARANCE"))
+        if (!existing || spent) {
             // Trigger "CLEARANCE" survives negotiation's round resets (cancelPilotJobs).
             next = { ...next, jobs: { ...next.jobs, [jobId]: pilotJob(jobId, "CLEARANCE", next, ["REQUEST_CLEARANCE", "HOLD"], context.wallNowMs) } }
         }

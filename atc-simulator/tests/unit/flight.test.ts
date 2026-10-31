@@ -181,10 +181,10 @@ describe("approach and clearance", () => {
 
     test("clearance job appears within 6 NM once the slot is close enough", () => {
         expect(clearanceDue(near(), 50)).toBe(false) // 250 > 90 + 120
-        const s = advanceFlight(near(), tick(0, 90), ctx(90)).state // 210 <= 210
+        const s = advanceFlight(near(), tick(0, 92), ctx(92)).state // 208 <= 210
         expect(Object.keys(s.jobs)).toEqual(["clearance-res-1"])
         expect(s.jobs["clearance-res-1"]!.input.allowedActions).toContain("REQUEST_CLEARANCE")
-        const again = advanceFlight(s, tick(90, 100), ctx(100)).state
+        const again = advanceFlight(s, tick(92, 100), ctx(100)).state
         expect(Object.keys(again.jobs)).toHaveLength(1)
     })
 

@@ -261,9 +261,17 @@ export class AirportActor extends Actor<null, null> {
         return step.result
     }
 
-    async markTransportAccepted(context: MutationContext, messageId: string, transportMessageId: string): Promise<void> {
+    // attemptCount / nextAttemptAtWallMs persist the dispatcher's retry schedule (survives a worker restart).
+    async markTransportAccepted(
+        context: MutationContext,
+        messageId: string,
+        transportMessageId: string | null,
+        attemptCount?: number,
+        nextAttemptAtWallMs?: number,
+    ): Promise<void> {
         if (fenceOnly(this.state, context) || !this.state) return
-        const next = markOutboxAccepted(this.state, messageId, transportMessageId)
+        const attempt = attemptCount !== undefined && nextAttemptAtWallMs !== undefined ? { attemptCount, nextAttemptAtWallMs } : undefined
+        const next = markOutboxAccepted(this.state, messageId, transportMessageId, attempt)
         if (next) this.state = next
     }
 

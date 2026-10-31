@@ -7,7 +7,7 @@
 // A later closure never undoes a recorded touchdown, because recovery reads the
 // receipt before anything checks the newer airport state.
 import type { AirportId, ClearanceCheckResult, MutationContext, TouchdownInput, TouchdownReceipt } from "@ghost-tower/domain/contracts"
-import type { SimulationRepository } from "./clock.ts"
+import { FencedError, type SimulationRepository } from "./clock.ts"
 
 export type TouchdownAttempt = TouchdownInput & { airportId: AirportId }
 export type TouchdownOutcome = { receipt: TouchdownReceipt | null; guarded: boolean; reason: string | null }
@@ -36,10 +36,13 @@ export async function attemptTouchdown(repo: SimulationRepository, context: Muta
         if (isReceipt(result)) receipt = result
         else refusal = typeof result === "object" && result !== null && "code" in result ? String((result as { code: unknown }).code) : "REJECTED"
     } catch (err) {
-        // The airport refused (closed runway, expired window, wrong clearance) or is
-        // unavailable. An unavailable airport must leave the tick pending, so only a
-        // domain refusal is turned into a guard; transport errors propagate.
-        if (!isDomainRefusal(err)) throw err
+        // AirportActor throws its refusal code. A fence means another worker or run
+        // owns the airport; a wait code retries next tick; a refusal forces holding
+        // and renegotiation; anything else (transport) leaves the tick pending.
+        const kind = classifyTouchdownError(err)
+        if (kind === "FENCE") throw new FencedError(reasonOf(err), `touchdown fenced: ${reasonOf(err)}`)
+        if (kind === "WAIT") return { receipt: null, guarded: false, reason: reasonOf(err) }
+        if (kind === "OTHER") throw err
         refusal = reasonOf(err)
     }
 
@@ -57,12 +60,30 @@ export async function attemptTouchdown(repo: SimulationRepository, context: Muta
     return { receipt: null, guarded: true, reason: check.reason }
 }
 
-// Terse surfaces an actor-thrown error as an invocation error with the thrown
-// message. Domain refusals from AirportActor.recordTouchdown carry a domain code.
-const REFUSAL_CODES = ["CLOSED", "OFFER_EXPIRED", "STALE_STATE", "WRONG_PHASE", "DEADLINE_EXCEEDED", "NO_CAPACITY", "INVALID_PAYLOAD", "ALREADY_TERMINAL"]
-function isDomainRefusal(err: unknown): boolean {
+// Terse surfaces an actor-thrown error as an invocation error carrying the thrown
+// message; AirportActor.recordTouchdown throws its domain code.
+const FENCE_CODES = ["INVALID_LEASE", "WRONG_RUN"]
+const WAIT_CODES = ["WINDOW_NOT_OPEN", "RUNWAY_OCCUPIED"]
+const REFUSAL_CODES = [
+    "CLOSED",
+    "UNKNOWN_CLEARANCE",
+    "MISMATCH",
+    "CLEARANCE_",
+    "WINDOW_PASSED",
+    "OFFER_EXPIRED",
+    "STALE_STATE",
+    "WRONG_PHASE",
+    "DEADLINE_EXCEEDED",
+    "NO_CAPACITY",
+    "INVALID_PAYLOAD",
+    "ALREADY_TERMINAL",
+]
+export function classifyTouchdownError(err: unknown): "FENCE" | "WAIT" | "REFUSAL" | "OTHER" {
     const text = reasonOf(err)
-    return REFUSAL_CODES.some(code => text.includes(code))
+    if (FENCE_CODES.some(c => text.includes(c))) return "FENCE"
+    if (WAIT_CODES.some(c => text.includes(c))) return "WAIT"
+    if (REFUSAL_CODES.some(c => text.includes(c))) return "REFUSAL"
+    return "OTHER"
 }
 
 // Recovery: finish any flight whose airport receipt exists but whose own LANDED

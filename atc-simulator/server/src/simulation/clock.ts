@@ -138,6 +138,9 @@ export async function runTick(repo: SimulationRepository, lease: WorkerLease): P
         const ctx = tickContext(lease, tick, `${tick.tickId}:guard:${f.flightId}`)
         const airport = repo.airport(lease.runId, a.airportId)
         const check = await airport.validateClearance(ctx, { flightId: f.flightId, reservationId: a.reservationId, clearanceId: a.clearanceId })
+        if (!check.valid && (check.reason === "INVALID_LEASE" || check.reason === "WRONG_RUN")) {
+            throw new FencedError(check.reason, `airport ${a.airportId} refused lease: ${check.reason}`)
+        }
         if (!check.valid) {
             await repo.flight(lease.runId, f.flightId).applyApproachGuard(ctx, check)
             guardsFailed.push(f.flightId)

@@ -25,14 +25,25 @@ export function checkFence(state: Fenced, ctx: MutationContext): { ok: true; fen
 // Effective simulation time never moves backwards for an actor.
 export const effectiveSimSec = (lastAdvancedSimSec: number, ctx: MutationContext) => Math.max(lastAdvancedSimSec, ctx.simNowSec)
 
-export function markOutboxAccepted<T extends { outbox: { envelope: { messageId: string }; transportMessageId: string | null }[] }>(
-    state: T,
-    messageId: string,
-    transportMessageId: string,
-): T | null {
+export type OutboxAttemptTiming = { attemptCount: number; nextAttemptAtWallMs: number }
+
+// Persist the dispatcher's transport receipt and retry schedule on the entry, so a
+// restarted worker resumes backoff instead of starting over. transportMessageId is
+// null when the send failed; the attempt count and next retry time still persist.
+export function markOutboxAccepted<
+    T extends { outbox: { envelope: { messageId: string }; transportMessageId: string | null; attemptCount: number; nextAttemptAtWallMs: number }[] },
+>(state: T, messageId: string, transportMessageId: string | null, attempt?: OutboxAttemptTiming): T | null {
     const i = state.outbox.findIndex(o => o.envelope.messageId === messageId)
-    if (i < 0 || state.outbox[i].transportMessageId === transportMessageId) return null
-    const outbox = state.outbox.map((o, j) => (j === i ? { ...o, transportMessageId } : o))
+    if (i < 0) return null
+    const o = state.outbox[i]
+    const next = {
+        ...o,
+        transportMessageId: transportMessageId ?? o.transportMessageId,
+        attemptCount: attempt ? Math.max(o.attemptCount, attempt.attemptCount) : o.attemptCount,
+        nextAttemptAtWallMs: attempt ? attempt.nextAttemptAtWallMs : o.nextAttemptAtWallMs,
+    }
+    if (next.transportMessageId === o.transportMessageId && next.attemptCount === o.attemptCount && next.nextAttemptAtWallMs === o.nextAttemptAtWallMs) return null
+    const outbox = state.outbox.map((e, j) => (j === i ? next : e))
     return { ...state, outbox }
 }
 
