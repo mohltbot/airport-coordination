@@ -24,7 +24,7 @@ export function Controller() {
   return (
     <main className="ctrl-page">
       <header className="ctrl-header">
-        <p>GHOST TOWER / PHONE CONTROL</p>
+        <p>iATC / PHONE CONTROL</p>
         <h1>Incident controller</h1>
         {snapshot && <p>Run {snapshot.runId}</p>}
         <span className="ctrl-connection" role="status">

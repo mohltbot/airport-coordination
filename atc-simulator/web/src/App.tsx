@@ -16,7 +16,7 @@ class ErrorBoundary extends Component<
   render() {
     return this.state.failed ? (
       <main className="fatal-state">
-        <h1>Ghost Tower</h1>
+        <h1>iATC</h1>
         <h2>The display could not load</h2>
         <p>
           Reload to fetch the current run. Simulation state remains on the
@@ -43,7 +43,7 @@ export function App() {
   if (preview && !fixture)
     return (
       <main className="fatal-state">
-        <h1>Ghost Tower</h1>
+        <h1>iATC</h1>
         <p>
           {fixtureError
             ? "Development fixture failed validation."

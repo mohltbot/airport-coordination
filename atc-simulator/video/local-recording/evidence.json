@@ -1,0 +1,16 @@
+{
+  "durationSec": 109.92,
+  "mode": "rules",
+  "bay": {
+    "runId": "7f2ad13e-5edf-4772-8812-bc740a1b26a4",
+    "callsign": "JRE45",
+    "smokeToLandingSec": 114.602
+  },
+  "nyc": {
+    "runId": "9f9991e3-ae91-4636-bea5-109b926df672"
+  },
+  "playbackSpeed": 1,
+  "phoneTriggers": true,
+  "fullDecodePassed": true,
+  "phoneOverlay": "left"
+}

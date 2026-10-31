@@ -67,17 +67,18 @@ export function Display() {
   return (
     <div className="simulator" data-mobile-view={mobileView} data-national-map={nationalMap} data-inspector-open={!!selectedId}>
       <header className="topbar">
-        <a className="brand" href="/" aria-label="Ghost Tower home">
+        <a className="brand" href="/" aria-label="iATC home">
           <svg viewBox="0 0 28 28" width="28" height="28" aria-hidden="true">
             <path
-              d="M4 5h20l-3 8H7L4 5Zm9 8v10m-5 0h12M8 9h12"
+              d="M14 3c-1 0-1.5 1.5-1.5 3v5L4 17v2l8.5-3v6l-3 2v1l4.5-1 4.5 1v-1l-3-2v-6l8.5 3v-2l-8.5-6V6C15.5 4.5 15 3 14 3Z"
               fill="none"
               stroke="currentColor"
               strokeWidth="1.6"
+              strokeLinecap="round"
               strokeLinejoin="round"
             />
           </svg>
-          <h1>Ghost Tower</h1>
+          <h1>iATC</h1>
         </a>
         <span className={`phase-badge phase-${phase.toLowerCase()}`}>
           {phase.toLowerCase()}

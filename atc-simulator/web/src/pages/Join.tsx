@@ -56,7 +56,7 @@ export function Join() {
   }, []);
   return (
     <main className="join-page">
-      <p>GHOST TOWER</p>
+      <p>iATC</p>
       <h1>Join the simulation</h1>
       {(state === "joining" || state === "idle") && (
         <p role="status">Exchanging your invitation…</p>
