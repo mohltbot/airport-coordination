@@ -71,6 +71,9 @@ export const RunConfigSchema = z.strictObject({
     focusRegion: z.enum(["BAY_AREA"]).nullable().optional(),
     emergencyCandidateMode: z.enum(["PARALLEL", "SEQUENTIAL"]).optional(),
     featuredFlightId: z.string().min(1).max(32).nullable().optional(),
+    // Demo preset: smoke landing deadline in sim seconds (default SMOKE_DEADLINE_SEC = 900) so
+    // hosted Relay round trips fit; see docs/bay-area-emergency-demo.md.
+    smokeDeadlineSec: z.number().int().min(300).max(3600).optional(),
     // Public attribution only; the selected live flights are stored server-side, not in the config.
     liveTraffic: z
         .strictObject({ source: z.literal("OpenSky Network"), fetchedAtWallMs: z.number().int().nonnegative() })
@@ -114,6 +117,20 @@ export const DomainCodeSchema = z.enum([
     "NO_FEASIBLE_AIRPORT",
 ])
 export type DomainCode = z.infer<typeof DomainCodeSchema>
+// Why an airport refused, derived from its authoritative state (Bay Area demo, 2026-10-31).
+export const RefusalReasonCodeSchema = z.enum([
+    "RUNWAY_CLOSED",
+    "WEATHER_CLOSED",
+    "AIRPORT_CLOSED",
+    "NO_CAPACITY",
+    "UNREACHABLE",
+    "DEADLINE_EXCEEDED",
+    "OFFER_EXPIRED",
+    "STALE_STATE",
+])
+export type RefusalReasonCode = z.infer<typeof RefusalReasonCodeSchema>
+export const EmergencyCandidateModeSchema = z.enum(["PARALLEL", "SEQUENTIAL"])
+export type EmergencyCandidateMode = z.infer<typeof EmergencyCandidateModeSchema>
 export const TerminalReasonSchema = z.enum(["FUEL_EXHAUSTED", "EMERGENCY_DEADLINE"])
 export type TerminalReason = z.infer<typeof TerminalReasonSchema>
 
@@ -263,6 +280,9 @@ export const PayloadSchemas = {
         airportId: AirportIdSchema,
         code: DomainCodeSchema,
         explanation: Explanation,
+        // Optional: absent on refusals from older builds.
+        reasonCode: RefusalReasonCodeSchema.optional(),
+        reasonText: z.string().max(120).optional(),
     }),
     OFFER_ACCEPT: z.strictObject({
         negotiationId: Id,
@@ -468,6 +488,8 @@ export const NegotiationRoundSchema = z.strictObject({
     replies: z.array(NegotiationReplySchema),
     collectUntilWallMs: WallMsSchema.nullable(),
     stage: NegotiationStageSchema,
+    // SEQUENTIAL emergency round: candidates are asked one at a time; replies lists only those asked.
+    sequential: z.boolean().optional(),
 })
 export type NegotiationRound = z.infer<typeof NegotiationRoundSchema>
 
@@ -629,6 +651,10 @@ export const FlightStateSchema = z.strictObject({
     releaseObligations: z.array(ReleaseObligationSchema),
     landingReceipt: TouchdownReceiptSchema.nullable(),
     terminalReason: TerminalReasonSchema.nullable(),
+    // From RunConfig.emergencyCandidateMode at world creation; absent means PARALLEL.
+    emergencyCandidateMode: EmergencyCandidateModeSchema.optional(),
+    // From RunConfig.smokeDeadlineSec; absent means SMOKE_DEADLINE_SEC.
+    smokeDeadlineSec: z.number().int().positive().optional(),
 })
 export type FlightState = z.infer<typeof FlightStateSchema>
 
@@ -854,11 +880,35 @@ export const ApiErrorSchema = z.object({
 })
 export type ApiError = z.infer<typeof ApiErrorSchema>
 
+// Live flights chosen at run creation (server/src/live/opensky.ts). Server-only: the run keeps
+// them so world generation replays, and the public config carries only the attribution.
+// flights[i] lends to flight F(i+1); entries past flightCount feed continuous departures.
+export const LIVE_TRAFFIC_MAX_FLIGHTS = 60
+export const LiveFlightSchema = z.strictObject({
+    callsign: z.string().min(1).max(32),
+    icao24: z.string().min(1).max(16),
+    lat: z.number().finite(),
+    lon: z.number().finite(),
+    headingDeg: z.number().finite(), // true track, degrees clockwise from north
+    groundSpeedKt: z.number().finite().nonnegative(),
+    altitudeFt: z.number().finite(),
+    // Null: a callsign donor with no plausible network destination.
+    destinationAirportId: AirportIdSchema.nullable(),
+})
+export type LiveFlight = z.infer<typeof LiveFlightSchema>
+export const LiveTrafficSeedSchema = z.strictObject({
+    source: z.literal("OpenSky Network"),
+    fetchedAtWallMs: WallMsSchema,
+    flights: z.array(LiveFlightSchema).max(LIVE_TRAFFIC_MAX_FLIGHTS),
+})
+export type LiveTrafficSeed = z.infer<typeof LiveTrafficSeedSchema>
+
 export const SimulationStateSchema = z.strictObject({
     runId: RunIdSchema,
     stateRevision: RevisionSchema,
     createRequestId: Id,
     config: RunConfigSchema,
+    liveTrafficSeed: LiveTrafficSeedSchema.nullable().optional(),
     phase: RunPhaseSchema,
     entities: z.array(EntityRegistrationSchema),
     traffic: z.object({ nextSequence: z.number().int().positive(), pending: z.array(z.object({ retiredId: FlightEntityIdSchema, flight: FlightStateSchema })), capacityReached: z.boolean(), retiredIds: z.array(FlightEntityIdSchema).optional() }).optional(),

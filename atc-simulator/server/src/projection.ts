@@ -4,7 +4,7 @@
 // projectionVersion is stamped here as max(previous + 1, wall ms): strictly increasing per run and
 // across gateway restarts, so a reconnecting browser never sees a lower version than before.
 import { SSE_MAX_HZ } from "@ghost-tower/domain/constants"
-import type { AirportId, AirportState, CommandReceipt, FlightState, PublicSnapshot, SimulationState, WorkerLease } from "@ghost-tower/domain/contracts"
+import type { AirportId, AirportState, CommandReceipt, DependencyHealth, FlightState, PublicSnapshot, SimulationState, WorkerLease } from "@ghost-tower/domain/contracts"
 import { buildPublicSnapshot } from "@ghost-tower/domain/projections"
 import type { SimulationBackend } from "./actors.ts"
 import type { TickOutcome } from "./simulation/clock.ts"
@@ -165,7 +165,7 @@ type PublisherSim = {
  * with the domain projection, stamp the worker's own health, and persist it with publishProjection.
  * The gateway serves it while it is fresh and treats a stale one as a stopped worker.
  */
-export function createWorkerPublisher(deps: { repo: WorkerRepository; env: Record<string, string | undefined> }) {
+export function createWorkerPublisher(deps: { repo: WorkerRepository; env: Record<string, string | undefined>; relayHealth?: () => DependencyHealth }) {
     const { repo, env } = deps
     const agentMode = env.AGENT_MODE?.trim().toLowerCase() === "live" ? ("live" as const) : ("rules" as const)
     const relayConfigured = Boolean(env.RELAY_BASE_URL?.trim() && env.RELAY_WORKSPACE_KEY?.trim())
@@ -197,9 +197,9 @@ export function createWorkerPublisher(deps: { repo: WorkerRepository; env: Recor
                     actors: { status: "READY", detail: null },
                     relay: !relayConfigured
                         ? { status: "UNAVAILABLE", detail: "Relay not configured" }
-                        : worker.status === "READY"
-                          ? { status: "READY", detail: null }
-                          : { status: "DEGRADED", detail: "Worker reconnecting Relay identities" },
+                        : worker.status !== "READY"
+                          ? { status: "DEGRADED", detail: "Worker reconnecting Relay identities" }
+                          : (deps.relayHealth?.() ?? { status: "READY", detail: null }),
                     model:
                         agentMode === "rules"
                             ? { status: "DEGRADED", detail: "Rules mode" }

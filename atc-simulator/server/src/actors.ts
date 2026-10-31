@@ -16,6 +16,7 @@ import type {
     FlightState,
     IncidentCommand,
     InitStep,
+    LiveTrafficSeed,
     MutationContext,
     DomainResult,
     PublicSnapshot,
@@ -26,6 +27,7 @@ import type {
 } from "@ghost-tower/domain/contracts"
 import type { AppConfig } from "./config.ts"
 import { fail, toApiFailure } from "./errors.ts"
+import { createOpenSkySource, prepareLiveRun, type LiveTrafficSource } from "./live/opensky.ts"
 import { initializeRun, type InitDeps } from "./simulation/initialize.ts"
 
 export type Health = PublicSnapshot["health"]
@@ -52,7 +54,8 @@ export interface SimulationBackend {
 
 /** SimulationActor methods the gateway uses (actors/src/SimulationActor.ts). Errors arrive as `CODE: message`. */
 export interface SimulationActorApi {
-    createRun(requestId: string, config: RunConfig): Promise<RunDescriptor>
+    /** liveTrafficSeed stays on the run server-side; the config carries only the attribution. */
+    createRun(requestId: string, config: RunConfig, liveTrafficSeed?: LiveTrafficSeed | null): Promise<RunDescriptor>
     activeRun(): Promise<RunDescriptor | null>
     getRun(runId: string): Promise<RunDescriptor | null>
     /** Internal aggregate: server-side only, projected before anything reaches a browser. */
@@ -128,6 +131,7 @@ export class ActorBackend implements SimulationBackend {
     constructor(
         private readonly repo: ActorRepository | null,
         private readonly config: AppConfig,
+        private readonly liveTraffic: LiveTrafficSource | null = createOpenSkySource({ dataDir: config.dataDir }),
     ) {}
 
     private sim(): SimulationActorApi {
@@ -164,7 +168,9 @@ export class ActorBackend implements SimulationBackend {
         if (active && LOCKED.has(active.phase)) {
             throw fail(409, "RUN_ACTIVE", `Run ${active.runId.slice(0, 8)} is ${active.phase}. Reset it before configuring a new run.`)
         }
-        return this.call(sim => sim.createRun(requestId, config))
+        // US runs: one OpenSky fetch (or the .data cache), at most 5 s; any failure keeps the seeded world.
+        const live = await prepareLiveRun(config, this.liveTraffic)
+        return this.call(sim => sim.createRun(requestId, live.config, live.seed))
     }
 
     async lifecycle(runId: string, action: LifecycleAction, operationId: string) {
@@ -248,7 +254,7 @@ export class ActorBackend implements SimulationBackend {
         const flights: FlightState[] = []
         if (run.phase === "CONFIGURING") {
             // Nothing is initialized before Start; show the deterministic seeded world it will create.
-            const world = createWorld(run.config, { runId: run.runId, operationId: `init-${run.runId}` })
+            const world = createWorld(run.config, { runId: run.runId, operationId: `init-${run.runId}` }, run.liveTrafficSeed)
             return withFullConfig(run, buildPublicSnapshot({
                 run,
                 airports: world.airports,

@@ -274,7 +274,7 @@ export function deriveAirportConditions(state: Pick<AirportState, "incidents">):
 /** Speed is the minimum imposed speed, deadline the earliest active deadline,
  *  priority the most urgent condition. Fuel urgency is derived from actual
  *  fuel while airborne, so it outlives a resolved LOW_FUEL report. */
-export function deriveFlightConditions(state: Pick<FlightState, "incidents" | "fuelRemainingSec" | "phase">): FlightConditions {
+export function deriveFlightConditions(state: Pick<FlightState, "incidents" | "fuelRemainingSec" | "phase" | "smokeDeadlineSec">): FlightConditions {
     const active = activeIncidents(state)
     const airborne = state.phase !== "LANDED" && state.phase !== "UNRESOLVED"
     const reasons: FlightConditions["emergencyReasons"] = []
@@ -283,7 +283,7 @@ export function deriveFlightConditions(state: Pick<FlightState, "incidents" | "f
     if (active.some(i => i.kind === "ENGINE_TROUBLE")) reasons.push("ENGINE_TROUBLE")
     if (airborne && (state.fuelRemainingSec <= LOW_FUEL_EMERGENCY_THRESHOLD_SEC || active.some(i => i.kind === "LOW_FUEL"))) reasons.push("LOW_FUEL")
     for (const i of active) {
-        if (i.kind === "SMOKE") deadlines.push(i.createdAtSimSec + SMOKE_DEADLINE_SEC)
+        if (i.kind === "SMOKE") deadlines.push(i.createdAtSimSec + (state.smokeDeadlineSec ?? SMOKE_DEADLINE_SEC))
         if (i.kind === "ENGINE_TROUBLE") deadlines.push(i.createdAtSimSec + ENGINE_TROUBLE_DEADLINE_SEC)
     }
     return {

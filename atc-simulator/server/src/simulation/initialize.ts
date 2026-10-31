@@ -35,7 +35,7 @@ export async function initializeRun(deps: InitDeps, runId: string, wallNowMs = D
     }
     // Initialization runs before any worker lease exists; epoch 0 is below every worker epoch.
     const context: MutationContext = { runId, workerEpoch: 0, leaseToken: `init-${runId}`, simNowSec: 0, wallNowMs, operationId: `init-${runId}` }
-    const world = createWorld(run.config, { runId, operationId: context.operationId })
+    const world = createWorld(run.config, { runId, operationId: context.operationId }, run.liveTrafficSeed)
     await record("WORLD_CREATED")
     if (!steps.includes("AIRPORTS_INITIALIZED")) {
         for (const a of world.airports) {

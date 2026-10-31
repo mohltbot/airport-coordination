@@ -41,6 +41,8 @@ export type PilotView = {
     stage: NegotiationStage | null
     // Airports the rules require this round to ask (REQUESTING stage).
     requestCandidates: AirportId[]
+    // SEQUENTIAL emergency round: candidates still to ask, nearest first, after the current one refuses.
+    sequentialQueue?: AirportId[]
     offers: PilotOfferView[]
     refusals: Array<{ airportId: AirportId; code: string; explanation: string | null }>
     activeAssignment: Assignment | null
@@ -86,7 +88,9 @@ export function bestOffer(view: PilotView): PilotOfferView | null {
 export function choosePilotRequest(view: PilotView): PilotDecision | null {
     if (view.stage !== "REQUESTING" || view.requestCandidates.length === 0) return null
     const why =
-        view.priority === "EMERGENCY"
+        view.priority === "EMERGENCY" && view.sequentialQueue
+            ? `Emergency: asking the nearest airport ${view.requestCandidates.join(", ")} first${view.sequentialQueue.length ? `; then ${view.sequentialQueue.join(", ")} one at a time if refused` : ""}`
+            : view.priority === "EMERGENCY"
             ? `Emergency: asking every reachable airport, nearest first (${view.requestCandidates.join(", ")})`
             : view.requestCandidates.length === 1 && view.requestCandidates[0] === view.originalDestination
               ? `Requesting a slot at original destination ${view.originalDestination}`

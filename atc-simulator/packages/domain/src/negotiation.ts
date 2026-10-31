@@ -43,6 +43,7 @@ import {
     type PilotDecision,
     type Priority,
     type ProtocolEnvelope,
+    type RefusalReasonCode,
     type Reservation,
     type Tick,
     type TouchdownInput,
@@ -255,6 +256,32 @@ function offerEnvelope(airport: AirportState, offer: Offer, ctx: NegotiationCont
     )
 }
 
+const runwayList = (ids: readonly string[]) =>
+    ids.length === 1 ? `runway ${ids[0]}` : `runways ${ids.slice(0, -1).join(", ")} and ${ids[ids.length - 1]}`
+const spoken = (text: string) => {
+    const t = text.trim().replace(/[.!]+$/, "")
+    return (t.charAt(0).toLowerCase() + t.slice(1)).slice(0, 120)
+}
+
+// The reason a refusal carries, derived from the airport's own authoritative state at refusal time.
+export function refusalReason(airport: AirportState, code: DomainCode, explanation: string): { reasonCode: RefusalReasonCode; reasonText: string } {
+    const closed = airport.restrictions.closedRunways
+    const weather = Object.values(airport.incidents).some(i => i.kind === "WEATHER_CLOSED" && i.status === "ACTIVE")
+    switch (code) {
+        case "CLOSED":
+            if (weather) return { reasonCode: "WEATHER_CLOSED", reasonText: "airport closed for weather" }
+            if (closed.length > 0) return { reasonCode: "RUNWAY_CLOSED", reasonText: `${runwayList(closed)} closed` }
+            return { reasonCode: "AIRPORT_CLOSED", reasonText: "airport closed to arrivals" }
+        case "NO_CAPACITY":
+        case "UNREACHABLE":
+        case "DEADLINE_EXCEEDED":
+        case "OFFER_EXPIRED":
+            return { reasonCode: code, reasonText: spoken(explanation) }
+        default:
+            return { reasonCode: "STALE_STATE", reasonText: spoken(explanation) }
+    }
+}
+
 function refusalEnvelope(
     airport: AirportState,
     flightId: string,
@@ -269,7 +296,7 @@ function refusalEnvelope(
         ctx,
         flightEntityId(flightId),
         "LANDING_REFUSED",
-        { negotiationId, airportId: airport.airportId, code, explanation: explanation.slice(0, 240) },
+        { negotiationId, airportId: airport.airportId, code, explanation: explanation.slice(0, 240), ...refusalReason(airport, code, explanation) },
         negotiationId,
         causation,
     )
@@ -848,8 +875,16 @@ const knownClosed = (flight: FlightState, id: AirportId) => {
     return !!s && (s.restrictions.arrivalsClosed || s.restrictions.closedRunways.length >= 2)
 }
 
+// SEQUENTIAL emergency mode (RunConfig.emergencyCandidateMode): ask one candidate at a time.
+export const isSequentialEmergency = (flight: FlightState) => flight.emergencyCandidateMode === "SEQUENTIAL" && flight.priority === "EMERGENCY"
+
 // Airports the flight can physically reach within fuel reserve (and deadline), nearest first.
-export function reachableAirports(flight: FlightState, ctx: NegotiationContext): Array<{ airportId: AirportId; distanceNm: number; travelSec: number }> {
+// A SEQUENTIAL emergency keeps airports it believes closed: their tower answers with the real reason.
+export function reachableAirports(
+    flight: FlightState,
+    ctx: NegotiationContext,
+    opts: { includeKnownClosed?: boolean } = {},
+): Array<{ airportId: AirportId; distanceNm: number; travelSec: number }> {
     const now = flightNow(flight, ctx)
     return airportsForDestination(flight.originalDestination).map(a => {
         const d = distanceNm(flight.position, a.position)
@@ -857,14 +892,15 @@ export function reachableAirports(flight: FlightState, ctx: NegotiationContext):
     })
         .filter(a => a.travelSec <= flight.fuelRemainingSec - FUEL_RESERVE_SEC)
         .filter(a => flight.deadlineSimSec === null || now + a.travelSec <= flight.deadlineSimSec)
-        .filter(a => !knownClosed(flight, a.airportId))
+        .filter(a => opts.includeKnownClosed || !knownClosed(flight, a.airportId))
         .sort((a, b) => a.distanceNm - b.distanceNm || a.airportId.localeCompare(b.airportId))
 }
 
 // Design §6 step 2: normal initial traffic asks its original airport first; emergencies and
-// diversions ask every reachable candidate at once, nearest first.
+// diversions ask every reachable candidate at once, nearest first. A SEQUENTIAL emergency
+// gets the same nearest-first list but asks it one airport at a time.
 export function planCandidates(flight: FlightState, trigger: string, ctx: NegotiationContext, exclude: readonly AirportId[] = []): AirportId[] {
-    const reachable = reachableAirports(flight, ctx).filter(a => !exclude.includes(a.airportId))
+    const reachable = reachableAirports(flight, ctx, { includeKnownClosed: isSequentialEmergency(flight) }).filter(a => !exclude.includes(a.airportId))
     if (flight.priority === "NORMAL" && trigger === "INITIAL") {
         const orig = reachable.find(a => a.airportId === flight.originalDestination)
         if (orig) return [orig.airportId]
@@ -957,13 +993,16 @@ export function openRound(
     }
     const counter = flight.negotiationCounter + 1
     const candidates = planCandidates(flight, trigger, ctx, opts.exclude)
+    const sequential = isSequentialEmergency(flight)
     const round: NegotiationRound = {
         roundId: `${flight.flightId}-N${counter}`,
         trigger: trigger.slice(0, 64),
         candidateAirports: candidates,
-        replies: candidates.map(pendingReply),
+        // SEQUENTIAL: replies lists only the airports asked so far, starting with the nearest.
+        replies: (sequential ? candidates.slice(0, 1) : candidates).map(pendingReply),
         collectUntilWallMs: candidates.length === 0 ? ctx.wallNowMs + ctx.timing.noFeasibleRetryMs : null,
         stage: candidates.length === 0 ? "NO_FEASIBLE_AIRPORT" : "REQUESTING",
+        ...(sequential ? { sequential: true } : {}),
     }
     let next: FlightState = {
         ...flight,
@@ -978,8 +1017,43 @@ export function openRound(
         next = { ...next, jobs: { ...next.jobs, [job.jobId]: job } }
         return done(next, flight, "OK", out, ctx)
     }
-    const sent = sendRoundRequests(next, candidates, ctx)
+    const sent = sendRoundRequests(next, roundRequestTargets(round), ctx)
     return done(sent.flight, flight, "OK", [...out, ...sent.out], ctx)
+}
+
+// Airports the REQUESTING stage asks: every candidate, or only the first in a SEQUENTIAL round.
+export function roundRequestTargets(round: NegotiationRound): AirportId[] {
+    if (!round.sequential) return [...round.candidateAirports]
+    return round.replies.filter(r => r.kind === "PENDING").map(r => r.airportId)
+}
+
+// SEQUENTIAL: the next candidate not yet asked in this round, in the round's nearest-first order.
+function nextSequentialCandidate(round: NegotiationRound): AirportId | null {
+    const asked = new Set(round.replies.map(r => r.airportId))
+    return round.candidateAirports.find(id => !asked.has(id)) ?? null
+}
+
+function askSequential(flight: FlightState, airportId: AirportId, ctx: NegotiationContext): { flight: FlightState; out: ProtocolEnvelope[]; code: string } {
+    const round = flight.negotiation!
+    const asked: NegotiationRound = { ...round, replies: [...round.replies, pendingReply(airportId)] }
+    return {
+        flight: { ...flight, negotiation: { ...asked, stage: "COLLECTING", collectUntilWallMs: ctx.wallNowMs + ctx.timing.replyCollectionWindowMs } },
+        out: requestEnvelopes(flight, asked, [airportId], ctx),
+        code: "OK",
+    }
+}
+
+// SEQUENTIAL step after the asked airport answers or its reply window lapses: accept a feasible
+// offer, else ask the next candidate with a fresh window, else finish like a parallel round.
+function sequentialAdvance(flight: FlightState, ctx: NegotiationContext): { flight: FlightState; out: ProtocolEnvelope[]; code: string } {
+    let round = flight.negotiation!
+    if (round.collectUntilWallMs !== null && ctx.wallNowMs >= round.collectUntilWallMs)
+        round = { ...round, replies: round.replies.map(r => (r.kind === "PENDING" ? { ...r, kind: "TIMEOUT" as const, code: "TIMEOUT" as const } : r)) }
+    const next: FlightState = { ...flight, negotiation: round }
+    if (round.replies.some(r => r.kind === "PENDING")) return { flight: next, out: [], code: "OK" }
+    if (rankOffers(offerViews(next, ctx), next.priority).length > 0) return completeCollection(next, ctx)
+    const id = nextSequentialCandidate(round)
+    return id ? askSequential(next, id, ctx) : completeCollection(next, ctx)
 }
 
 function sendRoundRequests(flight: FlightState, ids: readonly AirportId[], ctx: NegotiationContext): { flight: FlightState; out: ProtocolEnvelope[] } {
@@ -1038,7 +1112,8 @@ export function buildPilotView(flight: FlightState, ctx: NegotiationContext): Pi
         originalDestination: flight.originalDestination,
         roundId: round?.roundId ?? null,
         stage: round?.stage ?? null,
-        requestCandidates: round && round.stage === "REQUESTING" ? [...round.candidateAirports] : [],
+        requestCandidates: round && round.stage === "REQUESTING" ? roundRequestTargets(round) : [],
+        ...(round?.sequential ? { sequentialQueue: round.candidateAirports.filter(id => !round.replies.some(r => r.airportId === id)) } : {}),
         offers: offerViews(flight, ctx),
         refusals: (round?.replies ?? [])
             .filter(r => r.kind === "REFUSED" || r.kind === "TIMEOUT")
@@ -1217,6 +1292,16 @@ function adoptConfirmation(
         decisionRevision: next.decisionRevision + 1,
         jobs: cancelPilotJobs(next.jobs),
     }
+    // An emergency declared while this INITIAL round's acceptance was in flight could not open its
+    // own round (openRound waits for the pending acceptance). Negotiate it now; this booking stays
+    // the active assignment until the emergency round confirms somewhere.
+    if (next.priority === "EMERGENCY" && round?.roundId === c.negotiationId && round.trigger === "INITIAL") {
+        const reopened = openRound(next, "EMERGENCY", ctx)
+        if (reopened.result.outcome === "APPLIED") {
+            const added = reopened.state.outbox.slice(next.outbox.length).map(e => e.envelope)
+            return done({ ...reopened.state, outbox: next.outbox }, flight, "OK", [...out, ...added], ctx)
+        }
+    }
     return done(next, flight, "OK", out, ctx)
 }
 
@@ -1230,6 +1315,11 @@ function failAcceptance(flight: FlightState, ctx: NegotiationContext, airportId:
         const remaining = rankOffers(offerViews(next, ctx), next.priority)
         if (remaining.length > 0) {
             const s = sendAcceptance(next, remaining[0]!, ctx)
+            return done(s.flight, flight, code, s.out, ctx)
+        }
+        const queued = next.negotiation!.sequential ? nextSequentialCandidate(next.negotiation!) : null
+        if (queued) {
+            const s = askSequential(next, queued, ctx)
             return done(s.flight, flight, code, s.out, ctx)
         }
         next = { ...next, negotiation: { ...next.negotiation!, stage: "NO_FEASIBLE_AIRPORT", collectUntilWallMs: ctx.wallNowMs } }
@@ -1264,6 +1354,10 @@ export function advanceNegotiation(flight: FlightState, msg: InboundMessage, ctx
                 return done(flight, flight, terminal ? "ALREADY_TERMINAL" : "STALE_STATE", [declineEnvelope(flight, fromAirport, p.negotiationId, p.offerId, ctx, msg.messageId)], ctx)
             }
             let next = setReply(flight, { airportId: fromAirport, kind: "OFFER", offerId: p.offerId, code: null, slotStartSimSec: p.slotStartSimSec, explanation: null })
+            if (next.negotiation!.sequential) {
+                const s = sequentialAdvance(next, ctx)
+                return done(s.flight, flight, "OK", s.out, ctx)
+            }
             if (!collectionDecidable(next, ctx)) return done(next, flight, "OK", [], ctx)
             const c = completeCollection(next, ctx)
             return done(c.flight, flight, "OK", c.out, ctx)
@@ -1287,6 +1381,10 @@ export function advanceNegotiation(flight: FlightState, msg: InboundMessage, ctx
                     return done(c.flight, flight, "OK", c.out, ctx)
                 }
                 return done(next, flight, "OK", [], ctx)
+            }
+            if (round.sequential) {
+                const s = sequentialAdvance(next, ctx)
+                return done(s.flight, flight, "OK", s.out, ctx)
             }
             if (!collectionDecidable(next, ctx)) return done(next, flight, "OK", [], ctx)
             const c = completeCollection(next, ctx)
@@ -1394,7 +1492,7 @@ export function flightWallTimers(flight: FlightState, ctx: NegotiationContext): 
     const round = flight.negotiation
     if (!round) return { state: flight, result: { outcome: "APPLIED", code: "OK", stateRevision: flight.stateRevision } }
     if (round.stage === "COLLECTING" && round.collectUntilWallMs !== null && ctx.wallNowMs >= round.collectUntilWallMs) {
-        const c = completeCollection(flight, ctx)
+        const c = round.sequential ? sequentialAdvance(flight, ctx) : completeCollection(flight, ctx)
         return done(c.flight, flight, c.code, c.out, ctx)
     }
     if (round.stage === "NO_FEASIBLE_AIRPORT" && !flight.activeAssignment && round.collectUntilWallMs !== null && ctx.wallNowMs >= round.collectUntilWallMs)
