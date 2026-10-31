@@ -7,7 +7,7 @@ import { join } from "node:path"
 import { airportsForNetwork } from "@ghost-tower/domain/constants"
 import { LIVE_TRAFFIC_MAX_FLIGHTS, type LiveFlight, type LiveTrafficSeed, type RunConfig } from "@ghost-tower/domain/contracts"
 import { distanceNm } from "@ghost-tower/domain/geometry"
-import { AIRLINE_CALLSIGN, LIVE_TRAFFIC_SOURCE, isBayAreaFocus, projectUs } from "@ghost-tower/domain/live-traffic"
+import { AIRLINE_CALLSIGN, LIVE_TRAFFIC_SOURCE, isBayAreaFocus, isNycFocus, projectUs } from "@ghost-tower/domain/live-traffic"
 
 export const OPENSKY_URL = "https://opensky-network.org/api/states/all?lamin=24&lomin=-125&lamax=50&lomax=-66"
 export const OPENSKY_TIMEOUT_MS = 5_000
@@ -79,6 +79,7 @@ const ARRIVAL_MIN_UNITS = 12
 const ARRIVAL_MAX_UNITS = 70
 const PREFERRED_UNITS = 32
 const BAY_INBOUND = ["SFO", "OAK", "SJC"] as const
+const NYC_INBOUND = ["JFK", "LGA", "EWR"] as const
 
 type Airport = { airportId: string; latitude: number; longitude: number; position: { x: number; y: number } }
 type Arrival = { c: LiveCandidate; airportId: string; units: number }
@@ -128,13 +129,27 @@ function uniqueByCallsign(candidates: LiveCandidate[]): LiveCandidate[] {
  * Ordered selection: flights[i] lends to F(i+1); entries past flightCount feed continuous departures.
  * US: real arrivals spread across the network, then callsign donors. BAY_AREA: the featured slot
  * gets a real aircraft south of Monterey heading north, the rest real arrivals to SFO, OAK or
- * SJC, then the airline flights nearest SFO. Deterministic for a given input.
+ * SJC, then the airline flights nearest SFO. NYC: real arrivals to JFK, LGA or EWR, then the
+ * airline flights nearest JFK. Deterministic for a given input.
  */
 export function selectLiveFlights(candidates: LiveCandidate[], config: RunConfig, max = LIVE_TRAFFIC_MAX_FLIGHTS): LiveFlight[] {
     const directory = airportsForNetwork("US") as readonly Airport[]
     const pool = uniqueByCallsign(candidates)
     const used = new Set<string>()
     const take = (c: LiveCandidate) => (used.add(c.callsign), c)
+
+    // NYC lends callsigns only: real arrivals to JFK, LGA or EWR, then the airline flights nearest JFK.
+    if (isNycFocus(config)) {
+        const at = (id: string) => directory.find(a => a.airportId === id)!
+        const jfk = at("JFK")
+        const arrivals = pool.map(c => arrivalFor(c, NYC_INBOUND.map(at), 1)).filter((a): a is Arrival => a !== null)
+        const out = interleave(arrivals, NYC_INBOUND, a => a.units).map(a => toLive(take(a.c), a.airportId))
+        const near = pool
+            .filter(c => !used.has(c.callsign))
+            .sort((a, b) => distanceNm(projectUs(a.lon, a.lat), jfk.position) - distanceNm(projectUs(b.lon, b.lat), jfk.position) || a.callsign.localeCompare(b.callsign))
+        out.push(...near.map(c => toLive(c, null)))
+        return out.slice(0, max)
+    }
 
     if (!isBayAreaFocus(config)) {
         const arrivals = pool.map(c => arrivalFor(c, directory, ARRIVAL_MIN_UNITS)).filter((a): a is Arrival => a !== null)

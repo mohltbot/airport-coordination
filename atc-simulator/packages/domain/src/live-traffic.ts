@@ -24,6 +24,10 @@ export function projectedHeadingDeg(trueTrackDeg: number, latitude: number): num
 
 export const isBayAreaFocus = (config: Pick<RunConfig, "airportNetwork" | "focusRegion">): boolean =>
     config.airportNetwork === "US" && config.focusRegion === "BAY_AREA"
+export const isNycFocus = (config: Pick<RunConfig, "airportNetwork" | "focusRegion">): boolean =>
+    config.airportNetwork === "US" && config.focusRegion === "NYC"
+// Scenario focus regions own positions, destinations and fuel; live traffic lends callsigns only.
+export const isCallsignOnlyFocus = (config: Pick<RunConfig, "airportNetwork" | "focusRegion">): boolean => isBayAreaFocus(config) || isNycFocus(config)
 
 const clampToMap = (p: Point): Point => ({
     x: Math.min(MAP_WIDTH_NM - 1, Math.max(1, p.x)),
@@ -38,7 +42,7 @@ export function liveFlightFor(config: RunConfig, seed: LiveTrafficSeed | null | 
 }
 
 /**
- * BAY_AREA lends only the callsign: the scenario owns positions, destinations, fuel and speed.
+ * BAY_AREA and NYC lend only the callsign: the scenario owns positions, destinations, fuel and speed.
  * US places the flight where it really is, on its real track, bound for the airport it was
  * selected for. Speed stays at the sim cruise speed (incidents reset to it anyway) and fuel
  * stays seeded, so scenario timing is unchanged.
@@ -46,7 +50,7 @@ export function liveFlightFor(config: RunConfig, seed: LiveTrafficSeed | null | 
 export function applyLiveTraffic(config: RunConfig, flights: FlightState[], seed: LiveTrafficSeed | null | undefined): FlightState[] {
     if (!seed || config.airportNetwork !== "US") return flights
     const directory = airportsForNetwork("US")
-    const bay = isBayAreaFocus(config)
+    const bay = isCallsignOnlyFocus(config)
     return flights.map(flight => {
         const live = liveFlightFor(config, seed, flight.flightId)
         if (!live) return flight
