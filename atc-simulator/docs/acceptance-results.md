@@ -32,6 +32,7 @@ Command latencies run from the HTTP 202 to the state change in the public snapsh
 | Continuous traffic: landing then replacement departure | PASS | Run 766d9e7a, local engine, 10x, rules: F007 LANDED 13:54:28; replacement F011 departed 6 s later, booked SFO and LANDED 13:55:07; F012 TAP239 SJC to OAK followed |
 | Smoke on cue (`--smoke-on-enter`) | PASS | Run db0e4302: prompt, Enter, position re-check, SMOKE; touchdown 72 s later |
 | Weather closure with diversions at 10 flights, local engine | NOT RUN | |
+| NYC weather: JFK closed, diversions within EWR and LGA capacity, live model, local engine | PASS | Run 37a4e1c2, 8 flights at 10x: JFK revoked 3 bookings and refused 4 requests ("airport closed for weather") 0.4 to 2.0 s after the command; all 6 JFK flights confirmed at EWR 6.3 to 15.1 s after it and landed there; 2 LGA flights kept LGA |
 | `bun run test:integration`, `test:e2e`, `test:live` | NOT RUN | Unit tests (183) and the simulation and recovery integration files (15) pass |
 
 ## Relay: hosted against local engine
@@ -124,6 +125,25 @@ LIVE_LOCAL booking budget 12 s (`RELAY_EXPECTED_BOOKING_WALL_SEC=12`, lead 120 s
 The SJC slot was sim 330 in every run, so touchdown time depends on when the smoke goes in and on the tick rate.
 
 The effective sim rate is about 2x at the 5x setting and 2.8x at 10x, because the worker advances each of 24 entities with its own actor call every tick.
+
+## NYC weather demo with live model decisions, local engine (run 37a4e1c2)
+
+`bun run demo:nyc-weather -- --settle-sec 15`, worker `AGENT_MODE=live RELAY_EXPECTED_BOOKING_WALL_SEC=12 bun run worker:local-relay`, 8 flights at 10x, live OpenSky callsigns. Placement at the time: 6 flights inbound to JFK, 2 to LGA, 3.5 to 5.5 NM out inside the Northeast view. WEATHER_CLOSED went to airport:JFK only, 11 s after resume, when JFK had confirmed F001, F002 and F003 and held offers for F005 and F006. JFK was CLOSED in the snapshot 1.2 s after the submit.
+
+Seconds after the WEATHER_CLOSED submit (sender's wall clock), with message IDs:
+
+| Flight | JFK side | EWR offer | Accept | EWR confirm | Cleared | Landed at EWR |
+|---|---|---|---|---|---|---|
+| F001 MXY1700 | revoked 0.4 (7cd667b5), refused 2.0 (b4c6d743) | 3.4 (cef0d5a4) | 6.1 | 6.3 (d9b79134), R1 slot 270 | 11.0 | 89 |
+| F005 GJS4426 | refused 0.4 (f075b3b4) | 5.2 (a083a3f1) | 7.5 | 7.9 (2e52ef11), R2 slot 270 | 11.4 | 89 |
+| F003 EDV4979 | revoked 0.4 (e6bd85d4) | 7.5 (0ab6df89) | 8.9 | 9.4 (45747371), R1 slot 360 | 57.8 | 128 |
+| F007 JBU58 | refused 0.4 (1a030378) | 6.1 (d2e9233b) | 10.4 | 10.8 (47ce57c3), R2 slot 360 | 38.0 | 128 |
+| F002 DAL620 | revoked 0.4 (06b34da2) | 9.0 (946b7917) | 12.3 | 12.6 (1b0572d7), R1 slot 450 | 85.6 | 164 |
+| F006 DAL333 | refused 0.4 (434193f1) | 11.5 (bde9b8c8) | 14.6 | 15.1 (4ee43871), R2 slot 450 | 85.1 | 164 |
+
+Every JFK flight asked LGA and EWR together (once a flight had JFK's AIRPORT_STATUS it also asked CLT). LGA offered all six, each later than EWR's slot, because it was already carrying F004 and F008. The pilots took the earliest feasible offer and declined the rest with OFFER_DECLINE. EWR paired its two runways every 90 s (slots 270, 360, 450), so its capacity set the landing order. Nothing held and nothing was refused for capacity. F004 DAL267 and F008 EDV5482 landed at LGA on their original bookings at 65 and 79 s.
+
+Decision sources after the closure: 35 MODEL (every tower PROPOSE_OFFER and pilot REQUEST_LANDING and REQUEST_CLEARANCE), 2 RULES_FALLBACK (the SELECT_OFFER for F001 and F007, "Earliest feasible touchdown: EWR"), 91 SYSTEM (the envelopes themselves). One harmless race: F002's clearance request crossed the revocation and JFK answered CLEARANCE_REFUSED "stale state".
 
 ## Restarts (run 21665363, 13 US towers, hosted Relay)
 

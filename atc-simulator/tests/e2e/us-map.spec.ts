@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { bootstrap, harness } from './harness';
 import { usPreviewSnapshot } from '../../web/src/dev/us-preview';
+import { projectUs } from '../../web/src/lib/us-geography';
 
 test('US map shows sixteen real towers and opens airport communications', async ({ page }) => {
   const h = await harness(page, bootstrap(structuredClone(usPreviewSnapshot), 'VIEWER'));
@@ -117,3 +118,22 @@ test('national view hides flight badges and airport labels only show codes', asy
   await h.emit('snapshot', next);
   await expect(page.getByLabel('Map region')).toHaveValue('network');
  });
+
+test('Bay view selects the aircraft nearest the pointer when markers overlap and the region select fits its labels', async ({ page }) => {
+  const snapshot = structuredClone(usPreviewSnapshot);
+  const [a, b] = snapshot.flights.filter(f => !['LANDED','UNRESOLVED'].includes(f.phase));
+  const sfo = projectUs(-122.2, 37.55);
+  a!.position = { ...a!.position, x: sfo.x, y: sfo.y };
+  b!.position = { ...b!.position, x: sfo.x + 1, y: sfo.y };
+  const h = await harness(page, bootstrap(snapshot, 'VIEWER')); await h.open('/');
+  const region = page.getByLabel('Map region');
+  await region.selectOption('bay');
+  for (const f of [a!, b!, a!]) {
+    const plane = page.locator('.national-aircraft', { has: page.locator('title', { hasText: f.callsign }) }).locator('.national-plane');
+    const box = (await plane.boundingBox())!;
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    await expect(page.locator('.national-aircraft.is-selected')).toHaveAttribute('aria-label', new RegExp(`^${f.callsign},`));
+  }
+  const fits = await region.evaluate((s: HTMLSelectElement) => { const c = document.createElement('canvas').getContext('2d')!; c.font = getComputedStyle(s).font; return Math.max(...[...s.options].map(o => c.measureText(o.text).width)) + 36 <= s.clientWidth; });
+  expect(fits).toBe(true);
+});
