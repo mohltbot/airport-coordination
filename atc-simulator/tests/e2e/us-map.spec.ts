@@ -41,3 +41,25 @@ test('US map is usable on a phone without horizontal overflow', async ({ page })
   await page.getByLabel('Map region').selectOption('southwest');
   await expect(page.getByLabel('Map region')).toHaveValue('southwest');
 });
+
+test('Bay Area demo highlights the configured flight and opens its radio exchange', async ({ page }) => {
+  const snapshot = structuredClone(usPreviewSnapshot);
+  const flight = snapshot.flights[3]!;
+  snapshot.config.focusRegion = 'BAY_AREA';
+  snapshot.config.featuredFlightId = flight.flightId;
+  snapshot.config.emergencyCandidateMode = 'SEQUENTIAL';
+  snapshot.config.liveTraffic = null;
+  const h = await harness(page, bootstrap(snapshot, 'VIEWER'));
+  await h.open('/');
+  await expect(page.getByLabel('Map region')).toHaveValue('bay');
+  await expect(page.locator('.fleet-flight').first()).toContainText(flight.callsign);
+  await expect(page.locator('.featured-flight-badge')).toHaveCount(1);
+  await page.getByRole('button', { name: `Featured flight · ${flight.callsign} View radio exchange →` }).click();
+  await expect(page.locator('.inspector-header')).toContainText(flight.callsign);
+  await expect(page.getByRole('tab', { name: 'Communications', exact: true })).toHaveAttribute('aria-selected', 'true');
+  const next = structuredClone(snapshot); next.projectionVersion++;
+  next.flights = next.flights.filter(f => f.flightId !== flight.flightId);
+  await h.emit('snapshot', next);
+  await expect(page.locator('.featured-flight-link')).toHaveCount(0);
+  await expect(page.locator('.featured-flight-badge')).toHaveCount(0);
+});
