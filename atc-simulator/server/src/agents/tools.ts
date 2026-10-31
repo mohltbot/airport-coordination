@@ -81,7 +81,7 @@ export function validateDecisionShape(input: Pick<AgentDecisionInput, "role">, d
 
 // ---------------------------------------------------------------- facts the agent was shown
 
-export type KnownOffer = { offerId: string; airportId: string | null }
+export type KnownOffer = { offerId: string; airportId: string | null; feasible: boolean | null }
 export type ProposalFacts = {
     simNowSec: number | null
     offers: KnownOffer[] // offers a pilot may select
@@ -91,6 +91,8 @@ export type ProposalFacts = {
     flightIds: string[]
     arrivalsClosed: boolean
     closedRunways: string[]
+    // ATC views carry the tentative hold actor code placed; null means no free slot. Absent: unknown.
+    held: { runwayId: string; slotStartSimSec: number } | null | undefined
 }
 
 const ID_KEY_PATTERN = /\b(offerId|reservationId|negotiationId|flightId)\b["']?\s*[:=]\s*["']?([A-Za-z0-9:_\-.]{1,128})/g
@@ -98,12 +100,12 @@ const ID_KEY_PATTERN = /\b(offerId|reservationId|negotiationId|flightId)\b["']?\
 // Collects identifiers by key name from the compact view and from message summaries, so the
 // check works whether the actor put request facts in localState or only in a message.
 export function collectFacts(input: Pick<AgentDecisionInput, "localState" | "relevantMessages">): ProposalFacts {
-    const offers = new Map<string, string | null>()
+    const offers = new Map<string, KnownOffer>()
     const reservationIds = new Set<string>()
     const negotiationIds = new Set<string>()
     const flightIds = new Set<string>()
-    const add = (key: string, value: string, airportId: string | null) => {
-        if (key === "offerId") offers.set(value, offers.get(value) ?? airportId)
+    const add = (key: string, value: string, airportId: string | null, feasible: boolean | null = null) => {
+        if (key === "offerId") offers.set(value, offers.get(value) ?? { offerId: value, airportId, feasible })
         else if (key === "reservationId") reservationIds.add(value)
         else if (key === "negotiationId") negotiationIds.add(value)
         else if (key === "flightId") flightIds.add(value)
@@ -116,9 +118,10 @@ export function collectFacts(input: Pick<AgentDecisionInput, "localState" | "rel
         }
         const rec = node as Record<string, unknown>
         const airportId = typeof rec.airportId === "string" ? rec.airportId : null
+        const feasible = typeof rec.feasible === "boolean" ? rec.feasible : null
         for (const [key, value] of Object.entries(rec)) {
             if (typeof value === "string" && (key === "offerId" || key === "reservationId" || key === "negotiationId" || key === "flightId")) {
-                add(key, value, airportId)
+                add(key, value, airportId, feasible)
             } else if (typeof value === "string" && key === "roundId") {
                 negotiationIds.add(value)
             } else {
@@ -131,19 +134,33 @@ export function collectFacts(input: Pick<AgentDecisionInput, "localState" | "rel
         for (const match of m.summary.matchAll(ID_KEY_PATTERN)) add(match[1]!, match[2]!, null)
     }
     const ls = input.localState as Record<string, unknown>
-    const restrictions = (ls.restrictions ?? {}) as { arrivalsClosed?: unknown; closedRunways?: unknown }
+    // AirportState nests restrictions; the policy's AtcView puts them at the top level.
+    const restrictions = { ...((ls.restrictions ?? {}) as object), ...pick(ls, ["arrivalsClosed", "closedRunways"]) } as { arrivalsClosed?: unknown; closedRunways?: unknown }
+    const heldRaw = ls.held as { runwayId?: unknown; slotStartSimSec?: unknown } | null | undefined
     const assignment = ls.activeAssignment as { reservationId?: unknown } | null | undefined
     const simNow = typeof ls.simNowSec === "number" ? ls.simNowSec : typeof ls.lastAdvancedSimSec === "number" ? ls.lastAdvancedSimSec : null
     return {
         simNowSec: simNow,
-        offers: [...offers].map(([offerId, airportId]) => ({ offerId, airportId })),
+        offers: [...offers.values()],
         reservationIds: [...reservationIds],
         activeReservationId: typeof assignment?.reservationId === "string" ? assignment.reservationId : null,
         negotiationIds: [...negotiationIds],
         flightIds: [...flightIds],
         arrivalsClosed: restrictions.arrivalsClosed === true,
         closedRunways: Array.isArray(restrictions.closedRunways) ? restrictions.closedRunways.filter((r): r is string => typeof r === "string") : [],
+        held:
+            heldRaw === undefined
+                ? undefined
+                : heldRaw && typeof heldRaw.runwayId === "string" && typeof heldRaw.slotStartSimSec === "number"
+                  ? { runwayId: heldRaw.runwayId, slotStartSimSec: heldRaw.slotStartSimSec }
+                  : null,
     }
+}
+
+function pick(rec: Record<string, unknown>, keys: string[]): Record<string, unknown> {
+    const out: Record<string, unknown> = {}
+    for (const k of keys) if (k in rec) out[k] = rec[k]
+    return out
 }
 
 export type ProposalCheck = { ok: true } | { ok: false; code: "RULE_VIOLATION"; detail: string }
@@ -166,6 +183,7 @@ export function checkProposal(input: AgentDecisionInput, decision: AgentDecision
             const offer = facts.offers.find(o => o.offerId === decision.offerId)
             if (!offer) return violation(`offer ${decision.offerId} was never received`)
             if (offer.airportId && offer.airportId !== decision.airportId) return violation(`offer ${decision.offerId} belongs to ${offer.airportId}`)
+            if (offer.feasible === false) return violation(`offer ${decision.offerId} is not feasible on fuel or deadline`)
             return { ok: true }
         }
         case "REQUEST_CLEARANCE": {
@@ -175,6 +193,7 @@ export function checkProposal(input: AgentDecisionInput, decision: AgentDecision
         case "PROPOSE_OFFER": {
             if (facts.arrivalsClosed) return violation("airport arrivals are closed")
             if (facts.closedRunways.includes(decision.runwayId)) return violation(`runway ${decision.runwayId} is closed`)
+            if (facts.held === null) return violation("no free slot is held for this request")
             if (decision.slotStartSimSec % SLOT_GRID_SEC !== 0) return violation(`slot ${decision.slotStartSimSec} is off the ${SLOT_GRID_SEC} s grid`)
             if (facts.simNowSec !== null && decision.slotStartSimSec <= facts.simNowSec) return violation(`slot ${decision.slotStartSimSec} is not in the future`)
             return knownRequest(facts, decision.negotiationId, decision.flightId)

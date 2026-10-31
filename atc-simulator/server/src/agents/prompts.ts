@@ -23,6 +23,7 @@ Actions:
 - SELECT_OFFER: accept one offer you received, using its exact offerId and airportId. EMERGENCY: the closest airport with a feasible offer, ties by earlier slot, then airport ID. NORMAL: the original destination if it offered; otherwise the earliest slot, then shortest distance, then airport ID.
 - HOLD: wait, for example while replies are still outstanding or nothing feasible is available.
 - REQUEST_CLEARANCE: ask final landing clearance for your active reservation, using its exact reservationId.
+Offers carry distanceNm and a feasible flag that code computed from your fuel and deadline; never select an offer with feasible false. When requestCandidates is present, it lists the airports the rules require this round to ask.
 Never invent an ID, airport, or slot. Code rechecks every hard constraint and replaces a proposal that breaks one with the rules policy.`
 
 export const ATC_INSTRUCTIONS = `You are the air traffic control agent of one fictional airport in Ghost Tower, an airport coordination simulator. This is not real aviation.
@@ -31,6 +32,7 @@ Choose exactly one action from allowedActions and return it in the required JSON
 Actions:
 - PROPOSE_OFFER: offer the requesting flight a runway and a slot start in simulated seconds. Slots sit on a 30 second grid, no earlier than ceil((now + travelSeconds + 60) / 30) * 30. The protected interval [slotStart, slotStart + occupancySec + 30) must not overlap another offer, reservation, or occupancy on the same runway. Prefer the earliest slot, then R1. Never offer while arrivals are closed or on a closed runway.
 - REFUSE: decline with code CLOSED, NO_CAPACITY, UNREACHABLE, or DEADLINE_EXCEEDED.
+When the state has a "held" slot, actor code has already reserved that earliest free runway time for this request; offer exactly that runway and slot, or refuse if you have a stated reason. When "held" is null there is no free slot, so refuse.
 EMERGENCY requests come first. Use the exact negotiationId and flightId from the request. Code rechecks every hard constraint and replaces a proposal that breaks one with the rules policy.`
 
 export function instructionsFor(role: AgentDecisionInput["role"]): string {
@@ -86,14 +88,15 @@ const LIVE_OFFER = new Set(["OFFERED"])
 const LIVE_RESERVATION = new Set(["CONFIRMED", "CLEARED", "OCCUPIED"])
 const LIVE_CLEARANCE = new Set(["ACTIVE"])
 
-function filterRecord(value: unknown, keep: (item: Record<string, unknown>) => boolean): Record<string, unknown>[] | undefined {
+// Items without the filtered field (e.g. the policy's PilotOfferView has no status) are kept.
+function filterRecord(value: unknown, keep: (item: Record<string, unknown>) => boolean, field?: string): Record<string, unknown>[] | undefined {
     if (!value || typeof value !== "object") return undefined
     const items = (Array.isArray(value) ? value : Object.values(value)) as Record<string, unknown>[]
-    return items.filter(i => i && typeof i === "object" && keep(i))
+    return items.filter(i => i && typeof i === "object" && (field !== undefined && !(field in i) ? true : keep(i)))
 }
 
 function activeIncidents(value: unknown): unknown[] | undefined {
-    return filterRecord(value, i => i.status === "ACTIVE")?.map(i => ({
+    return filterRecord(value, i => i.status === "ACTIVE", "status")?.map(i => ({
         incidentId: i.incidentId,
         kind: i.kind,
         parameters: i.parameters,
@@ -109,10 +112,10 @@ export function compactLocalState(role: AgentDecisionInput["role"], localState: 
     delete view.lastAdvancedSimSec
     delete view.lastTickId
     if ("incidents" in view) view.incidents = activeIncidents(view.incidents) ?? []
-    if ("offers" in view) view.offers = filterRecord(view.offers, o => LIVE_OFFER.has(String(o.status))) ?? []
-    if ("reservations" in view) view.reservations = filterRecord(view.reservations, r => LIVE_RESERVATION.has(String(r.status))) ?? []
-    if ("clearances" in view) view.clearances = filterRecord(view.clearances, c => LIVE_CLEARANCE.has(String(c.status))) ?? []
-    if ("releaseObligations" in view) view.releaseObligations = filterRecord(view.releaseObligations, r => r.acknowledged !== true) ?? []
+    if ("offers" in view) view.offers = filterRecord(view.offers, o => LIVE_OFFER.has(String(o.status)), "status") ?? []
+    if ("reservations" in view) view.reservations = filterRecord(view.reservations, r => LIVE_RESERVATION.has(String(r.status)), "status") ?? []
+    if ("clearances" in view) view.clearances = filterRecord(view.clearances, c => LIVE_CLEARANCE.has(String(c.status)), "status") ?? []
+    if ("releaseObligations" in view) view.releaseObligations = filterRecord(view.releaseObligations, r => r.acknowledged !== true, "acknowledged") ?? []
     if (role === "PILOT" && !("airportDirectory" in view)) {
         const pos = view.position as { x?: unknown; y?: unknown } | undefined
         const speed = typeof view.speedKnots === "number" && view.speedKnots > 0 ? view.speedKnots : null
