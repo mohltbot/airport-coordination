@@ -114,6 +114,20 @@ export const DomainCodeSchema = z.enum([
     "NO_FEASIBLE_AIRPORT",
 ])
 export type DomainCode = z.infer<typeof DomainCodeSchema>
+// Why an airport refused, derived from its authoritative state (Bay Area demo, 2026-10-31).
+export const RefusalReasonCodeSchema = z.enum([
+    "RUNWAY_CLOSED",
+    "WEATHER_CLOSED",
+    "AIRPORT_CLOSED",
+    "NO_CAPACITY",
+    "UNREACHABLE",
+    "DEADLINE_EXCEEDED",
+    "OFFER_EXPIRED",
+    "STALE_STATE",
+])
+export type RefusalReasonCode = z.infer<typeof RefusalReasonCodeSchema>
+export const EmergencyCandidateModeSchema = z.enum(["PARALLEL", "SEQUENTIAL"])
+export type EmergencyCandidateMode = z.infer<typeof EmergencyCandidateModeSchema>
 export const TerminalReasonSchema = z.enum(["FUEL_EXHAUSTED", "EMERGENCY_DEADLINE"])
 export type TerminalReason = z.infer<typeof TerminalReasonSchema>
 
@@ -263,6 +277,9 @@ export const PayloadSchemas = {
         airportId: AirportIdSchema,
         code: DomainCodeSchema,
         explanation: Explanation,
+        // Optional: absent on refusals from older builds.
+        reasonCode: RefusalReasonCodeSchema.optional(),
+        reasonText: z.string().max(120).optional(),
     }),
     OFFER_ACCEPT: z.strictObject({
         negotiationId: Id,
@@ -468,6 +485,8 @@ export const NegotiationRoundSchema = z.strictObject({
     replies: z.array(NegotiationReplySchema),
     collectUntilWallMs: WallMsSchema.nullable(),
     stage: NegotiationStageSchema,
+    // SEQUENTIAL emergency round: candidates are asked one at a time; replies lists only those asked.
+    sequential: z.boolean().optional(),
 })
 export type NegotiationRound = z.infer<typeof NegotiationRoundSchema>
 
@@ -629,6 +648,8 @@ export const FlightStateSchema = z.strictObject({
     releaseObligations: z.array(ReleaseObligationSchema),
     landingReceipt: TouchdownReceiptSchema.nullable(),
     terminalReason: TerminalReasonSchema.nullable(),
+    // From RunConfig.emergencyCandidateMode at world creation; absent means PARALLEL.
+    emergencyCandidateMode: EmergencyCandidateModeSchema.optional(),
 })
 export type FlightState = z.infer<typeof FlightStateSchema>
 

@@ -22,6 +22,7 @@ import {
 } from "./contracts.js"
 import { headingDeg, polarOffset } from "./geometry.js"
 import { applyLiveTraffic, isBayAreaFocus, liveFlightFor } from "./live-traffic.js"
+import { applyDemoConfig } from "./bay-area.js"
 
 export function mulberry32(seed: number): () => number {
     let a = seed >>> 0
@@ -113,7 +114,7 @@ export function createWorld(config: RunConfig, options: WorldOptions, liveSeed?:
             terminalReason: null,
         })
     }
-    return { airports, flights: applyLiveTraffic(cfg, flights, liveSeed) }
+    return applyDemoConfig(cfg, { airports, flights: applyLiveTraffic(cfg, flights, liveSeed) })
 }
 
 // Fresh legs have a fresh actor identity and start at the current authoritative sim time.
