@@ -71,6 +71,9 @@ export const RunConfigSchema = z.strictObject({
     focusRegion: z.enum(["BAY_AREA"]).nullable().optional(),
     emergencyCandidateMode: z.enum(["PARALLEL", "SEQUENTIAL"]).optional(),
     featuredFlightId: z.string().min(1).max(32).nullable().optional(),
+    // Demo preset: smoke landing deadline in sim seconds (default SMOKE_DEADLINE_SEC = 900) so
+    // hosted Relay round trips fit; see docs/bay-area-emergency-demo.md.
+    smokeDeadlineSec: z.number().int().min(300).max(3600).optional(),
     // Public attribution only; the selected live flights are stored server-side, not in the config.
     liveTraffic: z
         .strictObject({ source: z.literal("OpenSky Network"), fetchedAtWallMs: z.number().int().nonnegative() })
@@ -650,6 +653,8 @@ export const FlightStateSchema = z.strictObject({
     terminalReason: TerminalReasonSchema.nullable(),
     // From RunConfig.emergencyCandidateMode at world creation; absent means PARALLEL.
     emergencyCandidateMode: EmergencyCandidateModeSchema.optional(),
+    // From RunConfig.smokeDeadlineSec; absent means SMOKE_DEADLINE_SEC.
+    smokeDeadlineSec: z.number().int().positive().optional(),
 })
 export type FlightState = z.infer<typeof FlightStateSchema>
 

@@ -291,4 +291,13 @@ describe("SEQUENTIAL emergency negotiation", () => {
         expect(f.activeAssignment?.airportId).toBe("SJC")
         expect(b.from("F001", "RESERVATION_RELEASE").map(e => e.toEntityId)).toEqual(["airport:SFO"])
     })
+
+    test("config.smokeDeadlineSec sets the smoke deadline; absent keeps 900 s", () => {
+        const smokeAt = (config: RunConfig) => {
+            const f = createWorld(config, { runId, operationId: "op" }).flights[0]!
+            return applyIncident(f, { incidentId: crypto.randomUUID(), target: "flight:F001", kind: "SMOKE", parameters: {} }, { runId, simNowSec: 100, wallNowMs: 1 }).state
+        }
+        expect(smokeAt(bayConfig({ smokeDeadlineSec: 1500 })).deadlineSimSec).toBe(1600)
+        expect(smokeAt(bayConfig()).deadlineSimSec).toBe(1000)
+    })
 })

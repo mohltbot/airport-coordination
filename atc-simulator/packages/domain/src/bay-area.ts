@@ -77,5 +77,7 @@ export function applyDemoConfig(config: RunConfig, world: InitialWorld): Initial
     if (config.focusRegion === "BAY_AREA" && config.airportNetwork === "US" && !config.continuousTraffic)
         flights = placeBayAreaFlights(config, flights)
     if (config.emergencyCandidateMode === "SEQUENTIAL") flights = flights.map(f => ({ ...f, emergencyCandidateMode: "SEQUENTIAL" as const }))
+    const smoke = config.smokeDeadlineSec
+    if (smoke !== undefined) flights = flights.map(f => ({ ...f, smokeDeadlineSec: smoke }))
     return flights === world.flights ? world : { ...world, flights }
 }
