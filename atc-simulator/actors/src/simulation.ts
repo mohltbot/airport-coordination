@@ -16,6 +16,7 @@ import {
     type EntityRegistration,
     type IncidentCommand,
     type InitStep,
+    type LiveTrafficSeed,
     type PendingTick,
     type PublicSnapshot,
     type RunConfig,
@@ -45,12 +46,14 @@ export function registrations(runId: string, flightCount: number, airportNetwork
     return ids.map(entityId => ({ entityId, handle: entityHandle(runId, entityId), role: entityRole(entityId) }))
 }
 
-export function newRun(runId: string, requestId: string, config: RunConfig, nowMs: number, workerEpoch = 0): SimulationState {
+export function newRun(runId: string, requestId: string, config: RunConfig, nowMs: number, workerEpoch = 0, liveTrafficSeed: LiveTrafficSeed | null = null): SimulationState {
     return {
         runId,
         stateRevision: 1,
         createRequestId: requestId,
         config: { ...config },
+        // Server-only OpenSky selection; absent means the seeded world.
+        ...(liveTrafficSeed ? { liveTrafficSeed } : {}),
         phase: "CONFIGURING",
         entities: registrations(runId, config.flightCount, config.airportNetwork),
         simNowSec: 0,
@@ -75,6 +78,13 @@ export function newRun(runId: string, requestId: string, config: RunConfig, nowM
 
 const withRun = (root: SimulationRootState, run: SimulationState): SimulationRootState => ({ ...root, runs: { ...root.runs, [run.runId]: run } })
 
+function withLiveSeed(run: SimulationState, seed: LiveTrafficSeed | null): SimulationState {
+    const { liveTrafficSeed: _old, ...rest } = run
+    return seed ? { ...rest, liveTrafficSeed: seed } : rest
+}
+// A retried create fetches live traffic again, so its attribution timestamp may differ.
+const sameRequestConfig = (a: RunConfig, b: RunConfig) => JSON.stringify({ ...a, liveTraffic: undefined }) === JSON.stringify({ ...b, liveTraffic: undefined })
+
 function logEvent(run: SimulationState, nowMs: number, type: string, summary: string, operationId: string | null): SimulationState {
     const event = { eventIndex: run.events.length, wallMs: nowMs, simSec: run.simNowSec, type, summary: summary.slice(0, 240), operationId }
     return { ...run, events: [...run.events, event], stateRevision: run.stateRevision + 1 }
@@ -88,12 +98,12 @@ export function activeRun(root: SimulationRootState, runId: string): SimulationS
     return run
 }
 
-export function createRun(root: SimulationRootState, requestId: string, config: RunConfig, runId: string, nowMs: number): { root: SimulationRootState; run: SimulationState } {
+export function createRun(root: SimulationRootState, requestId: string, config: RunConfig, runId: string, nowMs: number, liveTrafficSeed: LiveTrafficSeed | null = null): { root: SimulationRootState; run: SimulationState } {
     const cfg = RunConfigSchema.parse(config)
     const existingId = root.createRequests[requestId]
     if (existingId) {
         const existing = root.runs[existingId]
-        if (JSON.stringify(existing.config) !== JSON.stringify(cfg)) throw new RunError("REVISION_CONFLICT", "requestId reused with a different config")
+        if (!sameRequestConfig(existing.config, cfg)) throw new RunError("REVISION_CONFLICT", "requestId reused with a different config")
         return { root, run: existing }
     }
     let next = root
@@ -104,7 +114,7 @@ export function createRun(root: SimulationRootState, requestId: string, config: 
     // Agreed API rule: configuring again while CONFIGURING edits that run in place (same runId).
     if (current && current.phase === "CONFIGURING") {
         const edited = logEvent(
-            { ...current, config: cfg, entities: registrations(current.runId, cfg.flightCount, cfg.airportNetwork) },
+            { ...withLiveSeed(current, liveTrafficSeed), config: cfg, entities: registrations(current.runId, cfg.flightCount, cfg.airportNetwork) },
             nowMs,
             "CONFIG_UPDATED",
             `Configured ${cfg.flightCount} flights, seed ${cfg.seed}, ${cfg.speed}x`,
@@ -113,7 +123,7 @@ export function createRun(root: SimulationRootState, requestId: string, config: 
         next = withRun({ ...next, createRequests: { ...next.createRequests, [requestId]: current.runId } }, edited)
         return { root: next, run: edited }
     }
-    const run = newRun(runId, requestId, cfg, nowMs, current?.workerEpoch ?? 0)
+    const run = newRun(runId, requestId, cfg, nowMs, current?.workerEpoch ?? 0, liveTrafficSeed)
     next = withRun({ ...next, activeRunId: runId, createRequests: { ...next.createRequests, [requestId]: runId } }, run)
     return { root: next, run }
 }
@@ -152,11 +162,12 @@ export function resetRun(root: SimulationRootState, runId: string, operationId: 
     if (done) return { root, run: root.runs[done] }
     const old = activeRun(root, runId)
     const fenced = logEvent({ ...old, phase: "RESETTING", fencedAtWallMs: nowMs, workerLease: null, pendingTick: null }, nowMs, "RUN_RESET", "Run fenced by reset", operationId)
-    const run = newRun(newRunId, key, old.config, nowMs, old.workerEpoch)
+    const run = newRun(newRunId, key, old.config, nowMs, old.workerEpoch, old.liveTrafficSeed ?? null)
     const next = withRun(withRun({ ...root, activeRunId: newRunId, createRequests: { ...root.createRequests, [key]: newRunId } }, fenced), run)
     // Every call reads and writes this one aggregate, so fenced runs drop their 30 to 60 KB
     // public snapshot (actors still hold their state). With eight runs kept, calls took 300 ms.
-    const runs = Object.fromEntries(Object.entries(next.runs).map(([id, r]) => [id, id === newRunId || r.publicSnapshot === null ? r : { ...r, publicSnapshot: null }]))
+    // Fenced runs drop their live seed for the same reason; the new run carries it forward.
+    const runs = Object.fromEntries(Object.entries(next.runs).map(([id, r]) => [id, id === newRunId || (r.publicSnapshot === null && !r.liveTrafficSeed) ? r : withLiveSeed({ ...r, publicSnapshot: null }, null)]))
     return { root: { ...next, runs }, run }
 }
 
@@ -283,7 +294,7 @@ export function prepareTraffic(root: SimulationRootState, lease: WorkerLease, te
     const pending = run.entities.filter(e => e.entityId.startsWith("flight:") && terminalIds.includes(e.entityId)).flatMap(e => {
         if (nextSequence > MAX_TRAFFIC_LEGS) return []
         const sequence = nextSequence
-        const flight = createTrafficFlight(run.config, { runId: run.runId, operationId: `traffic:${sequence}` }, sequence, run.simNowSec)
+        const flight = createTrafficFlight(run.config, { runId: run.runId, operationId: `traffic:${sequence}` }, sequence, run.simNowSec, run.liveTrafficSeed)
         const directory = airportsForNetwork(run.config.airportNetwork)
         const usable = directory.filter(a => a.airportId !== flight.originalDestination && (usableOrigins === undefined || usableOrigins.includes(a.airportId)))
         const origin = usable.find(a => a.airportId === flight.originAirportId) ?? usable[0]

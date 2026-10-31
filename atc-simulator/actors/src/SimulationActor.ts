@@ -6,6 +6,7 @@ import type {
     EntityId,
     IncidentCommand,
     InitStep,
+    LiveTrafficSeed,
     PendingTick,
     PublicSnapshot,
     RunConfig,
@@ -27,8 +28,9 @@ import * as ledger from "./ledger.js"
 export class SimulationActor extends Actor<null, null> {
     @Persisted root: SimulationRootState = sim.emptyRoot()
 
-    async createRun(requestId: string, config: RunConfig): Promise<RunDescriptor> {
-        const out = sim.createRun(this.root, requestId, config, crypto.randomUUID(), Date.now())
+    // liveTrafficSeed: the gateway's OpenSky selection, kept server-side on the run (never public).
+    async createRun(requestId: string, config: RunConfig, liveTrafficSeed?: LiveTrafficSeed | null): Promise<RunDescriptor> {
+        const out = sim.createRun(this.root, requestId, config, crypto.randomUUID(), Date.now(), liveTrafficSeed ?? null)
         this.root = out.root
         return sim.describe(out.run)
     }

@@ -854,11 +854,35 @@ export const ApiErrorSchema = z.object({
 })
 export type ApiError = z.infer<typeof ApiErrorSchema>
 
+// Live flights chosen at run creation (server/src/live/opensky.ts). Server-only: the run keeps
+// them so world generation replays, and the public config carries only the attribution.
+// flights[i] lends to flight F(i+1); entries past flightCount feed continuous departures.
+export const LIVE_TRAFFIC_MAX_FLIGHTS = 60
+export const LiveFlightSchema = z.strictObject({
+    callsign: z.string().min(1).max(32),
+    icao24: z.string().min(1).max(16),
+    lat: z.number().finite(),
+    lon: z.number().finite(),
+    headingDeg: z.number().finite(), // true track, degrees clockwise from north
+    groundSpeedKt: z.number().finite().nonnegative(),
+    altitudeFt: z.number().finite(),
+    // Null: a callsign donor with no plausible network destination.
+    destinationAirportId: AirportIdSchema.nullable(),
+})
+export type LiveFlight = z.infer<typeof LiveFlightSchema>
+export const LiveTrafficSeedSchema = z.strictObject({
+    source: z.literal("OpenSky Network"),
+    fetchedAtWallMs: WallMsSchema,
+    flights: z.array(LiveFlightSchema).max(LIVE_TRAFFIC_MAX_FLIGHTS),
+})
+export type LiveTrafficSeed = z.infer<typeof LiveTrafficSeedSchema>
+
 export const SimulationStateSchema = z.strictObject({
     runId: RunIdSchema,
     stateRevision: RevisionSchema,
     createRequestId: Id,
     config: RunConfigSchema,
+    liveTrafficSeed: LiveTrafficSeedSchema.nullable().optional(),
     phase: RunPhaseSchema,
     entities: z.array(EntityRegistrationSchema),
     traffic: z.object({ nextSequence: z.number().int().positive(), pending: z.array(z.object({ retiredId: FlightEntityIdSchema, flight: FlightStateSchema })), capacityReached: z.boolean(), retiredIds: z.array(FlightEntityIdSchema).optional() }).optional(),

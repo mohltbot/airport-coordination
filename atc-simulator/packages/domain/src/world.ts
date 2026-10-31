@@ -17,9 +17,11 @@ import {
     type AirportState,
     type FlightState,
     type InitialWorld,
+    type LiveTrafficSeed,
     type RunConfig,
 } from "./contracts.js"
 import { headingDeg, polarOffset } from "./geometry.js"
+import { applyLiveTraffic, isBayAreaFocus, liveFlightFor } from "./live-traffic.js"
 
 export function mulberry32(seed: number): () => number {
     let a = seed >>> 0
@@ -52,7 +54,8 @@ export function flightIdFor(index: number): string {
     return `F${String(index).padStart(3, "0")}`
 }
 
-export function createWorld(config: RunConfig, options: WorldOptions): InitialWorld {
+// liveSeed: the run's stored OpenSky selection (SimulationState.liveTrafficSeed); absent keeps the seeded world.
+export function createWorld(config: RunConfig, options: WorldOptions, liveSeed?: LiveTrafficSeed | null): InitialWorld {
     const cfg = RunConfigSchema.parse(config)
     const { runId, operationId } = options
     const directory = airportsForNetwork(cfg.airportNetwork)
@@ -110,15 +113,20 @@ export function createWorld(config: RunConfig, options: WorldOptions): InitialWo
             terminalReason: null,
         })
     }
-    return { airports, flights }
+    return { airports, flights: applyLiveTraffic(cfg, flights, liveSeed) }
 }
 
 // Fresh legs have a fresh actor identity and start at the current authoritative sim time.
-export function createTrafficFlight(config: RunConfig, options: WorldOptions, sequence: number, simNowSec: number): FlightState {
+// Replacement legs take the next unused live callsign (and, outside BAY_AREA, its destination),
+// then fall back to seeded callsigns once the stored selection runs out.
+export function createTrafficFlight(config: RunConfig, options: WorldOptions, sequence: number, simNowSec: number, liveSeed?: LiveTrafficSeed | null): FlightState {
     const directory = airportsForNetwork(config.airportNetwork)
     const initial = createWorld({ ...config, flightCount: 1, seed: (config.seed + sequence) >>> 0, continuousTraffic: true }, options).flights[0]!
-    const destination = directory[(sequence - 1) % directory.length]!
-    const origin = directory[sequence % directory.length]!
     const flightId = flightIdFor(sequence)
-    return { ...initial, flightId, entityId: flightEntityId(flightId), callsign: `GHOST ${flightId.slice(1)}`, originalDestination: destination.airportId, originAirportId: origin.airportId, position: { ...origin.position }, headingDeg: headingDeg(origin.position, destination.position), lastAdvancedSimSec: simNowSec }
+    const live = liveFlightFor(config, liveSeed, flightId)
+    const liveDestination = live && !isBayAreaFocus(config) ? directory.find(a => a.airportId === live.destinationAirportId) : undefined
+    const destination = liveDestination ?? directory[(sequence - 1) % directory.length]!
+    let origin = directory[sequence % directory.length]!
+    if (origin.airportId === destination.airportId) origin = directory[(sequence + 1) % directory.length]!
+    return { ...initial, flightId, entityId: flightEntityId(flightId), callsign: live?.callsign ?? `GHOST ${flightId.slice(1)}`, originalDestination: destination.airportId, originAirportId: origin.airportId, position: { ...origin.position }, headingDeg: headingDeg(origin.position, destination.position), lastAdvancedSimSec: simNowSec }
 }
