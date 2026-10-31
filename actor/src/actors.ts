@@ -13,12 +13,20 @@ export type RoomEvent = {
 
 type Incoming = { type: "ping" }
 
+// Local dev keeps alarms in memory, so a runtime restart drops them while alarmAt
+// survives. Every call puts a missing alarm back (a past time fires at once).
+// A plain function, because sync methods on an actor class throw.
+function ensureAlarm(room: Room) {
+    if (room.alarmAt !== null && room.alarm.get() === null) room.alarm.set(room.alarmAt)
+}
+
 // One Room per coordination session. It holds the shared event log every screen watches.
 export class Room extends Actor<null, Incoming> {
     @Persisted @Emittable events: RoomEvent[] = []
     @Persisted @Emittable alarmAt: number | null = null
 
     async record(event: RoomEvent) {
+        ensureAlarm(this)
         if (this.events.some(e => e.id === event.id)) return false
         // Reassign instead of push so the change is persisted and emitted.
         this.events = [...this.events, event].slice(-200)
@@ -26,6 +34,7 @@ export class Room extends Actor<null, Incoming> {
     }
 
     async snapshot() {
+        ensureAlarm(this)
         return { events: this.events, alarmAt: this.alarmAt }
     }
 
@@ -39,6 +48,8 @@ export class Room extends Actor<null, Incoming> {
     async onAlarm() {
         const firedAt = Date.now()
         const scheduled = this.alarmAt
+        // Clear first so record() doesn't re-arm the alarm that is firing now.
+        this.alarmAt = null
         await this.record({
             id: `alarm-${scheduled ?? firedAt}`,
             from: "room",
@@ -47,7 +58,6 @@ export class Room extends Actor<null, Incoming> {
             at: new Date(firedAt).toISOString(),
             source: "alarm",
         })
-        this.alarmAt = null
     }
 
     async onMessage() {}
