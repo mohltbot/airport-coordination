@@ -953,6 +953,8 @@ export interface ModelAdapter {
 export type InitialWorld = { airports: AirportState[]; flights: FlightState[] }
 
 // Handles: ghost-<runId first 8>-controller, -atc-alp, -flight-f001. Actor IDs use the full run ID.
+// Terse actor IDs allow only letters, digits, dots, underscores and hyphens (1 to 128 chars), so the
+// plan's `<runId>/airport/ALP` is written `<runId>.airport.ALP` (see docs/integration-evidence.md).
 export function entityHandle(runId: string, entityId: EntityId): string {
     const prefix = `ghost-${runId.slice(0, 8)}`
     if (entityId === "controller") return `${prefix}-controller`
@@ -960,8 +962,8 @@ export function entityHandle(runId: string, entityId: EntityId): string {
     return `${prefix}-flight-${entityId.slice(7).toLowerCase()}`
 }
 export function entityActorId(runId: string, entityId: AirportEntityId | FlightEntityId): string {
-    if (entityId.startsWith("airport:")) return `${runId}/airport/${entityId.slice(8)}`
-    return `${runId}/flight/${entityId.slice(7)}`
+    if (entityId.startsWith("airport:")) return `${runId}.airport.${entityId.slice(8)}`
+    return `${runId}.flight.${entityId.slice(7)}`
 }
 export function entityRole(entityId: EntityId): Role {
     return entityId === "controller" ? "CONTROLLER" : entityId.startsWith("airport:") ? "ATC" : "PILOT"

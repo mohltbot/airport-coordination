@@ -1,5 +1,6 @@
 {
   "name": "@ghost-tower/domain",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "exports": {
@@ -11,7 +12,8 @@
     "./projections": "./src/projections.ts",
     "./incidents": "./src/incidents.ts",
     "./command-ledger": "./src/command-ledger.ts",
-    "./stable-id": "./src/stable-id.ts"
+    "./stable-id": "./src/stable-id.ts",
+    "./policy": "./src/policy.ts"
   },
   "dependencies": {
     "zod": "4.6.7"
