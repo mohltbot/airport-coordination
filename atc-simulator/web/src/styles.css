@@ -267,3 +267,6 @@ dialog::backdrop { background: #030609b8; backdrop-filter: blur(8px); }
 .continuous-setting { display: flex; align-items: center; gap: 10px; min-height: 44px; cursor: pointer; }
 .run-setup .continuous-setting input { width: 18px; min-height: 18px; accent-color: var(--cyan); margin: 0; }
 .continuous-note { font-size: 12px; line-height: 1.5; color: var(--muted); margin: 0 0 10px; }
+.featured-flight-badge { display:block; margin-top:5px; color:#9cd8ef; font-size:10px; font-weight:500; letter-spacing:.05em; text-transform:uppercase; }
+.featured-flight-link { margin:12px 20px 0; padding:12px 16px; text-align:left; color:#d5f1fc; background:#182c35; border:1px solid #36515c; border-radius:8px; min-height:44px; }
+.featured-flight-link span { display:block; margin-top:4px; font-size:12px; color:#9dbac7; }

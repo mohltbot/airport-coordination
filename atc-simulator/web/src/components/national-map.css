@@ -58,3 +58,5 @@
 .national-context-cities text { fill:#dce6ed; font:12px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; paint-order:stroke; stroke:#0b1015; stroke-width:3px; stroke-linejoin:round; }
 @media(max-width:767px) { .national-map-heading { flex-wrap:wrap; }.national-map-tools { width:100%; justify-content:space-between; }.national-region select { max-width:180px; } }
 @media(max-width:580px) { .national-place-labels { display: none; } }
+.national-label.is-featured > rect { stroke:#9cd8ef; stroke-width:1.5; }
+.national-label.is-featured:not(.is-emergency) text { fill:#c5edff; }

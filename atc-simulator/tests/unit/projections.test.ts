@@ -436,6 +436,7 @@ describe("projections", () => {
 
     test("radio summaries preserve urgency and clearance authority", () => {
         const request = summarizePayload("LANDING_REQUEST", { priority: "NORMAL", fuelRemainingSec: 600 })
+        expect(summarizePayload("LANDING_REFUSED", { airportId: "MRY", code: "CLOSED", explanation: "Closed", reasonCode: "RUNWAY_CLOSED", reasonText: "runway closed" })).toBe("Monterey Tower: unable to accept your landing request, runway closed.")
         expect(request).not.toContain("Mayday")
         expect(request).toContain("10 minutes")
         expect(request).not.toContain("smoke")

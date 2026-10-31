@@ -5,6 +5,7 @@ import { FlightList } from "../components/FlightList";
 import { EntityInspector } from "../components/EntityInspector";
 import { Timeline } from "../components/Timeline";
 import { IncidentControls } from "../components/IncidentControls";
+import { demoConfig } from "../lib/demo-config";
 import { US_AIRPORTS } from "../lib/us-geography";
 import {
   PhoneInvite,
@@ -27,6 +28,7 @@ export function Display() {
   const [dialog, setDialog] = useState<"phone" | "reset" | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const snapshot = sim.snapshot;
+  const featured = snapshot ? demoConfig(snapshot).featured : undefined;
   const nationalMap = snapshot?.airports.some((airport) =>
     US_AIRPORTS.some((known) => known.airportId === String(airport.airportId)),
   ) ?? false;
@@ -202,6 +204,7 @@ export function Display() {
           )}
         </aside>
         <section className="map-column" aria-label="Live airspace">
+          {featured && <button className="featured-flight-link" onClick={() => select(featured.entityId)}>Featured flight · {featured.callsign} <span>View radio exchange →</span></button>}
           <div className="map-heading">
             <div>
               <h2>{nationalMap ? "United States airspace" : "Regional airspace"}</h2>

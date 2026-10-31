@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import type { PublicSnapshot } from "@ghost-tower/domain/public";
 import "./display.css";
+import { demoConfig } from "../lib/demo-config";
 export function FlightList({
   snapshot,
   selectedId,
@@ -10,6 +11,7 @@ export function FlightList({
   selectedId: string | null;
   onSelect: (id: string) => void;
 }) {
+  const { featured } = demoConfig(snapshot);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("All");
   const flights = useMemo(
@@ -26,8 +28,8 @@ export function FlightList({
               (filter === "Landed" && f.phase === "LANDED") ||
               (filter === "Unresolved" && f.phase === "UNRESOLVED")),
         )
-        .sort((a, b) => a.callsign.localeCompare(b.callsign)),
-    [snapshot, query, filter],
+        .sort((a, b) => Number(b.entityId === featured?.entityId) - Number(a.entityId === featured?.entityId) || a.callsign.localeCompare(b.callsign)),
+    [snapshot, query, filter, featured?.entityId],
   );
   return (
     <section className="fleet-panel" aria-label="Flight list">
@@ -66,7 +68,7 @@ export function FlightList({
               aria-pressed={selectedId === f.entityId}
             >
               <span className="fleet-row">
-                <strong>{f.callsign}</strong>
+                <strong>{f.callsign}{f.entityId === featured?.entityId && <small className="featured-flight-badge">Featured</small>}</strong>
                 <span
                   className={
                     f.priority === "EMERGENCY"
