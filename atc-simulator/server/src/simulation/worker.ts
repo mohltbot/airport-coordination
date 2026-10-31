@@ -58,6 +58,8 @@ export interface WorkerRepository extends SimulationRepository {
     airport(runId: string, airportId: AirportId): AirportSimApi & EntityWorkApi
     flight(runId: string, flightId: string): FlightSimApi & EntityWorkApi
     /** Registered entity IDs of the run (airports, flights, controller). */
+    replenishTraffic?(lease: WorkerLease, connect: (ids: EntityId[]) => Promise<void>): Promise<boolean>
+    messagingEntities?(runId: string): Promise<EntityId[]>
     entities(runId: string): Promise<EntityId[]>
     /** Current run speed (1, 5 or 10), for negotiation timing. */
     runSpeed?(runId: string): Promise<number>
@@ -198,6 +200,8 @@ export class SimulationWorker {
         })()
 
         const entityIds = await repo.entities(runId)
+        const initialMessagingIds = await repo.messagingEntities?.(runId) ?? entityIds
+        const registry = registrationsFor(runId, initialMessagingIds)
         const airportIds = entityIds.flatMap(e => (e.startsWith("airport:") ? [e.slice(8) as AirportId] : []))
         const agentIds = entityIds.filter((e): e is AgentEntityId => e !== "controller")
 
@@ -224,10 +228,10 @@ export class SimulationWorker {
         let detachRouter: (() => void) | null = null
         const transport = this.deps.transport ?? null
         if (transport) {
-            await transport.connect(runId, registrationsFor(runId, entityIds))
+            await transport.connect(runId, registry)
             detachRouter = attachRouter(transport, {
                 runId,
-                registry: registrationsFor(runId, entityIds),
+                registry,
                 commandSecret: this.deps.commandSecret ?? null,
                 log: this.deps.onRoute,
                 inbox: {
@@ -294,6 +298,7 @@ export class SimulationWorker {
             // and the next interval retries the same tick ID.
             let tickBusy = false
             let idlePublishAt = 0
+            let trafficCheckAt = 0
             timers.push(
                 setInterval(async () => {
                     if (tickBusy || ended) return
@@ -301,6 +306,27 @@ export class SimulationWorker {
                     try {
                         // Landing recovery must finish before any flight advances again.
                         await recover()
+                        const checkTraffic = this.now() >= trafficCheckAt
+                        if (checkTraffic) {
+                            trafficCheckAt = this.now() + 1_000
+                            try {
+                                await repo.replenishTraffic?.(lease, async ids => {
+                                    if (ended || this.stopped) throw new FencedError("WRONG_RUN", "lease ended during traffic initialization")
+                                    await repo.simulation.renewWorker(lease)
+                                    if (ended || this.stopped) throw new FencedError("WRONG_RUN", "lease ended before traffic registration")
+                                    if (transport) await transport.connect(runId, registrationsFor(runId, ids))
+                                    if (ended || this.stopped) throw new FencedError("WRONG_RUN", "lease ended during traffic registration")
+                                })
+                            } finally {
+                                // Activation may have committed even when its RPC response was lost.
+                                // Authoritative membership, rather than a success flag, owns routing.
+                                const changed = !ended && await reconcileWorkerMembership(repo, runId, entityIds, agentIds, registry, transport, () => !ended && !this.stopped)
+                                if (changed) {
+                                    configuredSpeed = null
+                                    if (repo.runSpeed) await configure(await repo.runSpeed(runId))
+                                }
+                            }
+                        }
                         const outcome = await runTick(repo, lease)
                         if (ended) return
                         if (outcome) {
@@ -380,7 +406,7 @@ export class SimulationWorker {
 // One read of every entity per 200 ms, shared by the agent and outbox loops.
 const readCache = new Map<string, { at: number; value: Promise<Array<AirportState | FlightState>> }>()
 export function readAll(repo: WorkerRepository, runId: string, ids: readonly AgentEntityId[], maxAgeMs = 200): Promise<Array<AirportState | FlightState>> {
-    const key = runId
+    const key = `${runId}:${ids.join(",")}`
     const hit = readCache.get(key)
     const now = Date.now()
     if (hit && now - hit.at < maxAgeMs) return hit.value
@@ -449,7 +475,7 @@ async function main() {
                     if (e.outcome !== "SENT" || e.sendMs > 5_000) log(`relay send ${e.outcome} ${e.type} from ${e.entityId} attempt ${e.attempt} ${e.code ?? ""} ${e.sendMs}ms`)
                 },
                 outbox: {
-                    entities: () => repo.entities(lease.runId),
+                    entities: () => repo.messagingEntities?.(lease.runId) ?? repo.entities(lease.runId),
                     list: async (id: EntityId) => {
                         if (id === "controller") return repo.controllerOutbox ? repo.controllerOutbox.list(lease) : []
                         const state = await entityApi(repo, lease.runId, id).read()
@@ -513,4 +539,21 @@ if (import.meta.main) {
         console.error(errText(err))
         process.exit(1)
     })
+}
+
+// Shared by the running clock and recovery tests; never relies on an activation response.
+export async function reconcileWorkerMembership(repo: WorkerRepository, runId: string, activeIds: EntityId[], agentIds: AgentEntityId[], registry: ReturnType<typeof registrationsFor>, transport: RelayTransport | null, isCurrent: () => boolean = () => true): Promise<boolean> {
+    const ids = await repo.entities(runId)
+    const messaging = await repo.messagingEntities?.(runId) ?? ids
+    const changed = ids.join(",") !== activeIds.join(",")
+    const routingChanged = messaging.join(",") !== registry.map(e => e.entityId).join(",")
+    if (!isCurrent()) return false
+    if (routingChanged && transport) {
+        await transport.connect(runId, registrationsFor(runId, messaging))
+    }
+    if (!isCurrent()) return false
+    activeIds.splice(0, activeIds.length, ...ids)
+    agentIds.splice(0, agentIds.length, ...ids.filter((id): id is AgentEntityId => id !== "controller"))
+    registry.splice(0, registry.length, ...registrationsFor(runId, messaging))
+    return changed
 }

@@ -4,7 +4,7 @@
 // MAX_MESSAGE_SUMMARY_CHARS each, and at most MAX_DECISION_INPUT_BYTES serialized.
 import type { AgentDecisionInput } from "@ghost-tower/domain/contracts"
 import {
-    AIRPORTS,
+    airportsForDestination,
     MAX_DECISION_INPUT_BYTES,
     MAX_MESSAGE_SUMMARY_CHARS,
     MAX_REASON_CHARS,
@@ -19,7 +19,7 @@ export const PILOT_INSTRUCTIONS = `You are the pilot agent of one fictional flig
 You see only your own flight state, the public airport directory with your distance to each airport, the last airport status you were told, and messages sent to you.
 Choose exactly one action from allowedActions and return it in the required JSON shape. Give a short factual reason (at most ${MAX_REASON_CHARS} characters) that a person watching the simulation can read. Do not include private deliberation.
 Actions:
-- REQUEST_LANDING: ask 1 to 3 airports (ALP, BRV, CHR) for a landing slot. A NORMAL flight asks its original destination first, and the others only after a refusal or closure. An EMERGENCY flight asks every reachable airport, nearest first.
+- REQUEST_LANDING: ask 1 to 3 airports from the supplied airportDirectory for a landing slot. A NORMAL flight asks its original destination first, and the others only after a refusal or closure. An EMERGENCY flight asks every reachable airport, nearest first.
 - SELECT_OFFER: accept one offer you received, using its exact offerId and airportId. EMERGENCY: the closest airport with a feasible offer, ties by earlier slot, then airport ID. NORMAL: the original destination if it offered; otherwise the earliest slot, then shortest distance, then airport ID.
 - HOLD: wait, for example while replies are still outstanding or nothing feasible is available.
 - REQUEST_CLEARANCE: ask final landing clearance for your active reservation, using its exact reservationId.
@@ -121,7 +121,7 @@ export function compactLocalState(role: AgentDecisionInput["role"], localState: 
         const speed = typeof view.speedKnots === "number" && view.speedKnots > 0 ? view.speedKnots : null
         if (pos && typeof pos.x === "number" && typeof pos.y === "number") {
             const here = { x: pos.x, y: pos.y }
-            view.airportDirectory = AIRPORTS.map(a => {
+            view.airportDirectory = airportsForDestination(view.originalDestination).map(a => {
                 const d = distanceNm(here, a.position)
                 return {
                     airportId: a.airportId,

@@ -37,6 +37,7 @@ function entity<S extends AirportState | FlightState>(client: Client, label: str
             if (!s) throw new Error(`STALE_STATE: ${label} is not initialized`)
             return s
         },
+        initialize: client.initialize ?? missing("initialize"),
         advance: client.advance ?? missing("advance"),
         receive: client.receive ?? missing("receive"),
         claimWork: client.claimWork ?? missing("claimWork"),
@@ -63,6 +64,36 @@ export function workerRepositoryFrom(generated: Generated, simulationActorId = S
     const recordController = pick("recordControllerAttempt", "recordControllerOutboxAttempt")
     return {
         simulation: sim as unknown as SimulationClockApi,
+        async replenishTraffic(lease: WorkerLease, connect) {
+            const run = await sim.readRun!(lease.runId) as SimulationState
+            if (!run?.config.continuousTraffic || run.phase !== "RUNNING") return false
+            if (!sim.prepareTraffic || !sim.activateTraffic || !sim.cancelTraffic) throw new Error("continuous traffic requires regenerated actor clients")
+            const flights = await Promise.all(run.entities.filter(e => e.entityId.startsWith("flight:")).map(e => actors.FlightActor!.get(entityActorId(run.runId, e.entityId as `flight:${string}`)).read!() as Promise<FlightState>))
+            // Terminal legs are retained in their own actors; a fresh identity replaces them only after their outbox drains.
+            const airports = await Promise.all(run.entities.filter(e => e.entityId.startsWith("airport:")).map(e => actors.AirportActor!.get(entityActorId(run.runId, e.entityId as `airport:${string}`)).read!() as Promise<AirportState>))
+            const usableOrigins = airports.filter(a => !a.restrictions.arrivalsClosed && a.runways.some(r => !a.restrictions.closedRunways.includes(r.runwayId) && (r.occupiedUntilSimSec === null || r.occupiedUntilSimSec <= run.simNowSec))).map(a => a.airportId)
+            const pending = await sim.prepareTraffic(lease, flights.filter(f => (f.phase === "LANDED" || f.phase === "UNRESOLVED") && f.outbox.every(e => e.acknowledged || (e.envelope.type === "DOMAIN_ACK" && e.transportMessageId !== null))).map(f => f.entityId), usableOrigins) as NonNullable<SimulationState["traffic"]>["pending"]
+            if (!pending.length) return false
+            for (const item of pending) {
+                const ctx: MutationContext = { runId: lease.runId, workerEpoch: lease.epoch, leaseToken: lease.token, simNowSec: run.simNowSec, wallNowMs: Date.now(), operationId: item.flight.initializedByOperationId }
+                const result = await actors.FlightActor!.get(entityActorId(lease.runId, item.flight.entityId)).initialize!(ctx, item.flight)
+                if (result.outcome === "REJECTED") throw new Error(`traffic initialize: ${result.code}`)
+            }
+            const ids = [...new Set([...run.entities.map(e => e.entityId), ...(run.traffic?.retiredIds ?? []), ...pending.map(p => p.flight.entityId)])]
+            await connect(ids)
+            // Hosted registration can take seconds; check the selected departure runway again.
+            for (const item of pending) {
+                const origin = await actors.AirportActor!.get(entityActorId(run.runId, airportEntityId(item.flight.originAirportId!))).read!() as AirportState
+                if (origin.restrictions.arrivalsClosed || !origin.runways.some(r => !origin.restrictions.closedRunways.includes(r.runwayId) && (r.occupiedUntilSimSec === null || r.occupiedUntilSimSec <= run.simNowSec))) {
+                    await sim.cancelTraffic(lease)
+                    await connect([...run.entities.map(e => e.entityId), ...(run.traffic?.retiredIds ?? [])])
+                    return false
+                }
+            }
+            await sim.activateTraffic(lease)
+            const active = await sim.readRun!(lease.runId) as SimulationState
+            return active.entities.some(e => pending.some(p => p.flight.entityId === e.entityId))
+        },
         airport: (runId: string, airportId: AirportId) =>
             entity<AirportState>(actors.AirportActor!.get(entityActorId(runId, airportEntityId(airportId))), `airport ${airportId}`) as never,
         flight: (runId: string, flightId: string) => entity<FlightState>(actors.FlightActor!.get(entityActorId(runId, flightEntityId(flightId))), `flight ${flightId}`) as never,
@@ -70,6 +101,11 @@ export function workerRepositoryFrom(generated: Generated, simulationActorId = S
             const run = (await sim.readRun!(runId)) as SimulationState | null
             if (!run) throw new Error(`WRONG_RUN: unknown run ${runId}`)
             return run.entities.map(e => e.entityId)
+        },
+        async messagingEntities(runId: string): Promise<EntityId[]> {
+            const run = await sim.readRun!(runId) as SimulationState | null
+            if (!run) throw new Error(`WRONG_RUN: unknown run ${runId}`)
+            return [...new Set([...run.entities.map(e => e.entityId), ...(run.traffic?.retiredIds ?? [])])]
         },
         async runSpeed(runId: string): Promise<number> {
             const run = (await sim.readRun!(runId)) as SimulationState | null

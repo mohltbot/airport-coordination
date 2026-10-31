@@ -1,11 +1,15 @@
 // Pure run-registry transitions for SimulationActor. Each returns a new root or throws `CODE: message`.
-import { AIRPORTS, SCHEDULER_INTERVAL_MS, WORKER_LEASE_MS } from "@ghost-tower/domain/constants"
+import { headingDeg } from "@ghost-tower/domain/geometry"
+import { createTrafficFlight } from "@ghost-tower/domain/world"
+import { airportsForNetwork, SCHEDULER_INTERVAL_MS, WORKER_LEASE_MS } from "@ghost-tower/domain/constants"
 import {
     RunConfigSchema,
     airportEntityId,
     entityHandle,
     entityRole,
     flightEntityId,
+    type AirportId,
+    type FlightState,
     type CommandReceipt,
     type ControllerPrincipal,
     type EntityId,
@@ -32,10 +36,10 @@ export class RunError extends Error {
 
 export const describe = (run: SimulationState): RunDescriptor => ({ runId: run.runId, phase: run.phase, config: { ...run.config } })
 
-export function registrations(runId: string, flightCount: number): EntityRegistration[] {
+export function registrations(runId: string, flightCount: number, airportNetwork?: RunConfig["airportNetwork"]): EntityRegistration[] {
     const ids: EntityId[] = [
         "controller",
-        ...AIRPORTS.map(a => airportEntityId(a.airportId)),
+        ...airportsForNetwork(airportNetwork).map(a => airportEntityId(a.airportId)),
         ...Array.from({ length: flightCount }, (_, i) => flightEntityId(`F${String(i + 1).padStart(3, "0")}`)),
     ]
     return ids.map(entityId => ({ entityId, handle: entityHandle(runId, entityId), role: entityRole(entityId) }))
@@ -48,7 +52,7 @@ export function newRun(runId: string, requestId: string, config: RunConfig, nowM
         createRequestId: requestId,
         config: { ...config },
         phase: "CONFIGURING",
-        entities: registrations(runId, config.flightCount),
+        entities: registrations(runId, config.flightCount, config.airportNetwork),
         simNowSec: 0,
         tickCounter: 0,
         pendingTick: null,
@@ -100,7 +104,7 @@ export function createRun(root: SimulationRootState, requestId: string, config: 
     // Agreed API rule: configuring again while CONFIGURING edits that run in place (same runId).
     if (current && current.phase === "CONFIGURING") {
         const edited = logEvent(
-            { ...current, config: cfg, entities: registrations(current.runId, cfg.flightCount) },
+            { ...current, config: cfg, entities: registrations(current.runId, cfg.flightCount, cfg.airportNetwork) },
             nowMs,
             "CONFIG_UPDATED",
             `Configured ${cfg.flightCount} flights, seed ${cfg.seed}, ${cfg.speed}x`,
@@ -190,6 +194,7 @@ export function renewWorker(root: SimulationRootState, lease: WorkerLease, nowMs
 export function beginTick(root: SimulationRootState, lease: WorkerLease, nowMs: number): { root: SimulationRootState; tick: PendingTick | null } {
     const run = requireLease(root, lease, nowMs)
     if (run.pendingTick) return { root, tick: run.pendingTick }
+    if (run.traffic?.pending.length) return { root, tick: null }
     if (run.phase !== "RUNNING") return { root, tick: null }
     const counter = run.tickCounter + 1
     const tick: PendingTick = {
@@ -254,4 +259,52 @@ export function submitCommand(root: SimulationRootState, command: IncidentComman
         command.commandId,
     )
     return { root: withRun(root, next), receipt }
+}
+
+// Bounded fresh identities: archived actors are never reset or reused. At capacity,
+// the run remains readable and requires an explicit reset to provision more legs.
+export const MAX_TRAFFIC_LEGS = 10_000
+export function prepareTraffic(root: SimulationRootState, lease: WorkerLease, terminalIds: EntityId[], nowMs: number, usableOrigins?: AirportId[]): { root: SimulationRootState; pending: NonNullable<SimulationState["traffic"]>["pending"] } {
+    const run = requireLease(root, lease, nowMs)
+    if (!run.config.continuousTraffic || run.phase !== "RUNNING" || run.pendingTick) return { root, pending: [] }
+    const traffic = run.traffic ?? { nextSequence: run.config.flightCount + 1, pending: [], capacityReached: false }
+    if (traffic.pending.length) return { root, pending: traffic.pending }
+    let nextSequence = traffic.nextSequence
+    const pending = run.entities.filter(e => e.entityId.startsWith("flight:") && terminalIds.includes(e.entityId)).flatMap(e => {
+        if (nextSequence > MAX_TRAFFIC_LEGS) return []
+        const sequence = nextSequence
+        const flight = createTrafficFlight(run.config, { runId: run.runId, operationId: `traffic:${sequence}` }, sequence, run.simNowSec)
+        const directory = airportsForNetwork(run.config.airportNetwork)
+        const usable = directory.filter(a => a.airportId !== flight.originalDestination && (usableOrigins === undefined || usableOrigins.includes(a.airportId)))
+        const origin = usable.find(a => a.airportId === flight.originAirportId) ?? usable[0]
+        if (!origin) return []
+        nextSequence++
+        flight.originAirportId = origin.airportId
+        flight.position = { ...origin.position }
+        const destination = directory.find(a => a.airportId === flight.originalDestination)!
+        flight.headingDeg = headingDeg(origin.position, destination.position)
+        return [{ retiredId: e.entityId as `flight:${string}`, flight }]
+    })
+    if (!pending.length && nextSequence === traffic.nextSequence && run.traffic?.capacityReached === (nextSequence > MAX_TRAFFIC_LEGS)) return { root, pending: [] }
+    let next: SimulationState = { ...run, traffic: { retiredIds: traffic.retiredIds ?? [], nextSequence, pending, capacityReached: nextSequence > MAX_TRAFFIC_LEGS }, stateRevision: run.stateRevision + 1 }
+    if (next.traffic!.capacityReached && !traffic.capacityReached) next = logEvent(next, nowMs, "TRAFFIC_CAPACITY_REACHED", "Demo flight capacity reached (10,000 legs). Reset the run to continue departures.", null)
+    return { root: withRun(root, next), pending }
+}
+export function activateTraffic(root: SimulationRootState, lease: WorkerLease, nowMs: number): SimulationRootState {
+    const run = requireLease(root, lease, nowMs)
+    if (!run.config.continuousTraffic || run.phase !== "RUNNING" || run.pendingTick || !run.traffic?.pending.length) return root
+    const replacements = new Map(run.traffic.pending.map(p => [p.retiredId, p.flight.entityId]))
+    const entities = run.entities.map(e => {
+        const entityId = replacements.get(e.entityId as `flight:${string}`)
+        return entityId ? { entityId, handle: entityHandle(run.runId, entityId), role: entityRole(entityId) } : e
+    })
+    return withRun(root, { ...run, entities, traffic: { ...run.traffic, retiredIds: [...(run.traffic.retiredIds ?? []), ...run.traffic.pending.map(p => p.retiredId)], pending: [] }, stateRevision: run.stateRevision + 1 })
+}
+
+// Abandon only the reserved identities, never reuse them. Old active entities remain
+// authoritative, allowing ordinary ticks while a later departure chooses a new origin.
+export function cancelTraffic(root: SimulationRootState, lease: WorkerLease, nowMs: number): SimulationRootState {
+    const run = requireLease(root, lease, nowMs)
+    if (run.pendingTick || !run.traffic?.pending.length) return root
+    return withRun(root, { ...run, traffic: { ...run.traffic, pending: [] }, stateRevision: run.stateRevision + 1 })
 }

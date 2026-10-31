@@ -241,3 +241,29 @@ dialog::backdrop { background: #030609b8; backdrop-filter: blur(8px); }
 @media(min-width:768px) and (max-height:850px) { .simulator { min-height: 880px; } }
 @media(prefers-reduced-transparency:reduce) { dialog::backdrop { backdrop-filter: none; background: #030609ee; } }
 @media(prefers-reduced-motion:reduce) { *,*::before,*::after { scroll-behavior: auto!important; transition: none!important; animation: none!important; } }
+
+/* The national atlas gets the full stage until an entity is selected. */
+.simulator[data-national-map=true] .map-heading { padding: 22px 26px 16px; }
+.simulator[data-national-map=true] .map-heading h2 { font-size: 28px; }
+.simulator[data-national-map=true] .timeline-slot { height: 150px; }
+.simulator[data-national-map=true] .map-viewport { min-height: 510px; }
+.simulator[data-national-map=true] { min-height: 1020px; }
+.simulator[data-national-map=true][data-inspector-open=false] .right-panel { display: none; }
+.inspector-close { display: flex; align-items: center; justify-content: space-between; width: calc(100% - 32px); margin: 12px 16px 0; color: var(--muted); background: transparent; font-size: 12px; }
+.inspector-close span { font-size: 22px; line-height: 1; }
+@media(min-width:1051px) {
+  .simulator[data-national-map=true][data-inspector-open=false] .workspace { grid-template-columns: 236px minmax(0,1fr); }
+}
+@media(min-width:768px) and (max-width:1050px) {
+  .simulator[data-national-map=true][data-inspector-open=false] .workspace { grid-template-columns: minmax(0,1fr); }
+}
+@media(max-width:767px) {
+  .simulator[data-national-map=true] { min-height: 100dvh; }
+  .simulator[data-national-map=true] .map-heading { padding: 20px; }
+  .simulator[data-national-map=true] .map-heading h2 { font-size: 24px; }
+  .simulator[data-national-map=true] .map-viewport { min-height: 580px; }
+  .simulator[data-national-map=true] .timeline-slot { height: 190px; }
+}
+.continuous-setting { display: flex; align-items: center; gap: 10px; min-height: 44px; cursor: pointer; }
+.run-setup .continuous-setting input { width: 18px; min-height: 18px; accent-color: var(--cyan); margin: 0; }
+.continuous-note { font-size: 12px; line-height: 1.5; color: var(--muted); margin: 0 0 10px; }

@@ -3,6 +3,7 @@
 // the actor persists it with one assignment.
 import {
     AIRPORTS,
+    US_AIRPORTS,
     APPROACH_RADIUS_NM,
     CLEARANCE_LEAD_SEC,
     FUEL_BURN_PER_SIM_SEC,
@@ -36,7 +37,7 @@ const EPS_NM = 1e-6
 const EPS_SEC = 1e-6
 
 export const AIRPORT_POSITION: Record<AirportId, Point> = Object.fromEntries(
-    AIRPORTS.map(a => [a.airportId, { x: a.position.x, y: a.position.y }]),
+    [...AIRPORTS, ...US_AIRPORTS].map(a => [a.airportId, { x: a.position.x, y: a.position.y }]),
 ) as Record<AirportId, Point>
 
 

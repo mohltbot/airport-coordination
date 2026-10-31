@@ -201,6 +201,7 @@ export class HostedRelayTransport implements RelayTransport {
     private byHandle = new Map<string, EntityRegistration>()
     private pollTimer: ReturnType<typeof setTimeout> | null = null
     private polling: Promise<void> | null = null
+    private pollGeneration = 0
     private stopped = true
     readonly stats: HostedRelayStats = { registered: 0, reconnected: 0, sent: 0, delivered: 0, rejected: 0, polls: 0, lastPollOkAtWallMs: null, lastError: null }
 
@@ -218,6 +219,9 @@ export class HostedRelayTransport implements RelayTransport {
      * log reconciliation. Safe to call again after a restart: nothing already registered is re-registered.
      */
     async connect(runId: string, entities: EntityRegistration[]): Promise<void> {
+        const generation = ++this.pollGeneration
+        if (this.pollTimer) clearTimeout(this.pollTimer)
+        this.pollTimer = null
         for (const e of entities)
             if (e.handle !== entityHandle(runId, e.entityId)) throw new Error(`handle ${e.handle} does not match ${e.entityId} for run ${runId}`)
         this.runId = runId
@@ -251,9 +255,10 @@ export class HostedRelayTransport implements RelayTransport {
             this.opts.tokenStore.put({ ...rec, channels: [...rec.channels, channel] })
         })
 
+        if (generation !== this.pollGeneration) return
         this.stopped = false
         await this.reconcileNow()
-        this.schedulePoll()
+        if (generation === this.pollGeneration) this.schedulePoll()
     }
 
     private async register(handle: string): Promise<{ id: string; token: string }> {
@@ -321,6 +326,7 @@ export class HostedRelayTransport implements RelayTransport {
     }
 
     async disconnect(): Promise<void> {
+        this.pollGeneration++
         this.stopped = true
         if (this.pollTimer) clearTimeout(this.pollTimer)
         this.pollTimer = null
@@ -329,9 +335,10 @@ export class HostedRelayTransport implements RelayTransport {
 
     private schedulePoll() {
         if (this.stopped) return
+        const generation = this.pollGeneration
         this.pollTimer = setTimeout(async () => {
             await this.reconcileNow().catch(() => {})
-            this.schedulePoll()
+            if (generation === this.pollGeneration) this.schedulePoll()
         }, this.opts.pollIntervalMs ?? RELAY_RECONCILE_INTERVAL_MS)
     }
 

@@ -1,0 +1,60 @@
+.national-map { position: relative; background: #0b1015; overflow: hidden; }
+.national-map-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 20px 22px 14px; background: #12171d; }
+.national-map-heading h2 { margin: 0 0 5px; font-size: 17px; font-weight: 600; letter-spacing: -.025em; }
+.national-map-heading p { margin: 0; color: #a1acba; font-size: 12px; line-height: 1.5; }
+.national-map-zoom { display: flex; gap: 2px; flex: none; }
+.national-map-zoom button { min-width: 44px; min-height: 44px; padding: 0 10px; border: 0; border-radius: 7px; background: #20262e; color: #e9edf3; font: 500 14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; cursor: pointer; }
+.national-map-zoom button:first-child, .national-map-zoom button:last-child { font-size: 22px; }
+.national-map-zoom button:hover { background: #2b3541; }
+.national-map-zoom button:disabled { color: #687482; cursor: default; background: #191f26; }
+.national-map-zoom button:focus-visible { outline: 2px solid #8ccfff; outline-offset: 2px; }
+.national-map-svg { display: block; width: 100%; flex: 1; min-height: 360px; background: #0b1015; }
+.national-states path { fill: #1c2b2d; stroke: #476061; stroke-width: .65; stroke-opacity: .52; stroke-linejoin: round; }
+.national-place-labels { fill: #829ba4; opacity: .72; text-anchor: middle; font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; pointer-events: none; }
+.national-routes { pointer-events: none; }
+.national-assignment { stroke: #b1d7ea; stroke-width: 1; stroke-dasharray: .4 5; stroke-linecap: round; opacity: .38; fill: none; }
+.national-assignment.is-selected { stroke: #b9e7ff; stroke-width: 1.5; opacity: .95; }
+.national-offer { stroke: #f2c079; stroke-width: 1.2; stroke-dasharray: 6 4; opacity: .8; fill: none; }
+.national-airport, .national-aircraft, .national-label { cursor: pointer; outline: none; }
+.national-hit { fill: transparent; stroke: transparent; stroke-width: 1; }
+.national-airport { color: #a1e1ba; }
+.national-airport.status-closed { color: #ff939d; }
+.national-airport.status-limited, .national-airport.status-degraded, .national-airport.status-restricted { color: #f2c079; }
+.national-airport-outer { fill: #132025; stroke: currentColor; stroke-width: 1.1; }
+.national-airport-inner { fill: currentColor; fill-opacity: .14; stroke: currentColor; stroke-width: 1; }
+.national-airport-runway { fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linecap: round; }
+.national-airport.is-selected .national-airport-outer { stroke: #bde7ff; stroke-width: 2.3; }
+.national-plane { fill: #c3dfed; stroke: #0b1015; stroke-width: 1; stroke-linejoin: round; }
+.national-aircraft.is-selected .national-plane { fill: #8ccfff; stroke: #edf8ff; }
+.national-aircraft.is-emergency .national-plane { fill: #ff939d; }
+.national-aircraft.is-landed .national-plane { fill: #7c8b96; }
+.national-airport:hover .national-hit, .national-aircraft:hover .national-hit { fill: #8ccfff12; }
+.national-airport:focus-visible .national-hit, .national-aircraft:focus-visible .national-hit { stroke: #8ccfff; }
+.national-label > line { stroke: #8babb5; stroke-width: .6; opacity: .4; pointer-events: none; }
+.national-label > rect { fill: #10181eee; stroke: #51636b66; stroke-width: .6; transition: fill 160ms ease, stroke 160ms ease; }
+.national-label text { fill: #e9f0f4; font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; font-weight: 500; stroke: none; }
+.national-label.is-airport text { font-weight: 600; }
+.national-label .national-label-city { fill: #b0bfc8; font-weight: 400; }
+.national-label.is-selected > rect { fill: #183140; stroke: #8ccfff; }
+.national-label.is-selected text { fill: #c9ebff; }
+.national-label.is-emergency > rect { fill: #321f29; stroke: #ff939d; }
+.national-label.is-emergency text { fill: #ffb5bd; }
+.national-label:hover > rect, .national-label:focus-visible > rect { fill: #223643; stroke: #b9e7ff; stroke-width: 1.3; }
+.national-map-footer { display: flex; flex-wrap: wrap; gap: 12px 22px; padding: 14px 22px; color: #a1acba; font-size: 12px; background: #12171d; }
+.national-map-footer > span { display: inline-flex; align-items: center; gap: 7px; }
+.national-scale { margin-left: auto; }
+.national-map-empty { position: absolute; bottom: 60px; left: 22px; margin: 0; padding: 10px 12px; background: #151c23; color: #b8c3cf; font-size: 12px; border-radius: 6px; }
+@media (max-width: 767px) { .national-map-heading { align-items: flex-start; padding: 16px; gap: 10px; }.national-map-heading p span { display: block; }.national-map-svg { min-height: 390px; }.national-map-footer { padding: 14px 16px; gap: 10px 16px; }.national-scale { margin-left: 0; width: 100%; }.national-map-zoom button { min-width: 44px; padding: 0 6px; } }
+@media (prefers-reduced-motion: reduce) { .national-label > rect { transition: none; } }
+.national-map-tools { display:flex; align-items:center; gap:10px; }
+.national-region select { min-height:44px; max-width:150px; padding:0 10px; border:0; border-radius:7px; background:#20262e; color:#e9edf3; font:500 12px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+.national-region select:focus-visible { outline:2px solid #8ccfff; outline-offset:2px; }
+.national-sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+.national-map-svg { touch-action:none; cursor:grab; }
+.national-map-svg:active { cursor:grabbing; }
+.national-map-svg:focus-visible { outline:2px solid #8ccfff; outline-offset:-3px; }
+.national-context-cities { pointer-events:none; }
+.national-context-cities circle { fill:#b0bfc8; }
+.national-context-cities text { fill:#dce6ed; font:12px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; paint-order:stroke; stroke:#0b1015; stroke-width:3px; stroke-linejoin:round; }
+@media(max-width:767px) { .national-map-heading { flex-wrap:wrap; }.national-map-tools { width:100%; justify-content:space-between; }.national-region select { max-width:180px; } }
+@media(max-width:580px) { .national-place-labels { display: none; } }

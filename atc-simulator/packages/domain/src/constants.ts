@@ -17,13 +17,140 @@ export const DEFAULT_SPEED = 10
 // World
 export const MAP_WIDTH_NM = 240
 export const MAP_HEIGHT_NM = 160
-export const AIRPORT_IDS = ["ALP", "BRV", "CHR"] as const
+export const AIRPORT_IDS = ["ALP", "BRV", "CHR", "ATL", "DFW", "DEN", "ORD", "LAX", "JFK", "CLT", "LAS", "MCO", "MIA"] as const
 export const RUNWAY_IDS = ["R1", "R2"] as const
 export const AIRPORTS = [
     { airportId: "ALP", name: "Alpha", position: { x: 50, y: 50 } },
     { airportId: "BRV", name: "Bravo", position: { x: 110, y: 110 } },
     { airportId: "CHR", name: "Charlie", position: { x: 170, y: 50 } },
 ] as const
+// Real US geography, compressed into the unchanged simulation coordinate space.
+export const US_AIRPORTS = [
+    {
+        "airportId": "ATL",
+        "name": "Hartsfield\u2013Jackson Atlanta International Airport",
+        "city": "Atlanta",
+        "latitude": 33.6367,
+        "longitude": -84.428101,
+        "rank": 1,
+        "position": {
+            "x": 160.0874,
+            "y": 93.0893
+        }
+    },
+    {
+        "airportId": "DFW",
+        "name": "Dallas Fort Worth International Airport",
+        "city": "Dallas-Fort Worth",
+        "latitude": 32.896801,
+        "longitude": -97.038002,
+        "rank": 2,
+        "position": {
+            "x": 114.0613,
+            "y": 96.5299
+        }
+    },
+    {
+        "airportId": "DEN",
+        "name": "Denver International Airport",
+        "city": "Denver",
+        "latitude": 39.860027,
+        "longitude": -104.673792,
+        "rank": 3,
+        "position": {
+            "x": 86.1907,
+            "y": 64.1509
+        }
+    },
+    {
+        "airportId": "ORD",
+        "name": "Chicago O'Hare International Airport",
+        "city": "Chicago",
+        "latitude": 41.9786,
+        "longitude": -87.9048,
+        "rank": 4,
+        "position": {
+            "x": 147.3975,
+            "y": 54.2995
+        }
+    },
+    {
+        "airportId": "LAX",
+        "name": "Los Angeles International Airport",
+        "city": "Los Angeles",
+        "latitude": 33.942501,
+        "longitude": -118.407997,
+        "rank": 5,
+        "position": {
+            "x": 36.0608,
+            "y": 91.6674
+        }
+    },
+    {
+        "airportId": "JFK",
+        "name": "John F. Kennedy International Airport",
+        "city": "New York",
+        "latitude": 40.639447,
+        "longitude": -73.779317,
+        "rank": 6,
+        "position": {
+            "x": 198.9555,
+            "y": 60.5266
+        }
+    },
+    {
+        "airportId": "CLT",
+        "name": "Charlotte Douglas International Airport",
+        "city": "Charlotte",
+        "latitude": 35.2140007019043,
+        "longitude": -80.94309997558594,
+        "rank": 7,
+        "position": {
+            "x": 172.8077,
+            "y": 85.7549
+        }
+    },
+    {
+        "airportId": "LAS",
+        "name": "Harry Reid International Airport",
+        "city": "Las Vegas",
+        "latitude": 36.083361,
+        "longitude": -115.151817,
+        "rank": 8,
+        "position": {
+            "x": 47.9459,
+            "y": 81.7124
+        }
+    },
+    {
+        "airportId": "MCO",
+        "name": "Orlando International Airport",
+        "city": "Orlando",
+        "latitude": 28.429399490356445,
+        "longitude": -81.30899810791016,
+        "rank": 9,
+        "position": {
+            "x": 171.4722,
+            "y": 117.3033
+        }
+    },
+    {
+        "airportId": "MIA",
+        "name": "Miami International Airport",
+        "city": "Miami",
+        "latitude": 25.796011,
+        "longitude": -80.289751,
+        "rank": 10,
+        "position": {
+            "x": 175.1924,
+            "y": 129.5485
+        }
+    }
+] as const
+
+export const airportsForNetwork = (network?: "US" | "LEGACY") => network === "US" ? US_AIRPORTS : AIRPORTS
+export const airportsForDestination = (destination: unknown) => US_AIRPORTS.some(a => a.airportId === destination) ? US_AIRPORTS : AIRPORTS
+
 export const SPAWN_DISTANCE_MIN_NM = 25
 export const SPAWN_DISTANCE_RANGE_NM = 15
 export const INITIAL_FUEL_BASE_SEC = 3600

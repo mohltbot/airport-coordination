@@ -14,7 +14,7 @@ test.describe('Display browser contract tests (mock transport)', () => {
     const h = await harness(page, bootstrap(null, 'OPERATOR')); await page.goto('/');
     await page.getByRole('spinbutton', { name: /Flights/ }).fill('17'); await page.getByRole('button', { name: 'Start simulation' }).click();
     await expect.poll(() => h.state.posts.length).toBe(2);
-    expect(h.state.posts[0]!.body).toEqual({ requestId: expect.any(String), config: { flightCount: 17, seed: 20261031, speed: 5 } });
+    expect(h.state.posts[0]!.body).toEqual({ requestId: expect.any(String), config: { flightCount: 17, seed: 20261031, speed: 5, airportNetwork: 'US', continuousTraffic: true } });
     expect(h.state.posts[0]!.csrf).toBe('browser-test-csrf'); expect(h.state.posts[1]!.body.operationId).toMatch(/^[\da-f-]{36}$/);
   });
   test('updates an existing configuring run with the chosen count before start', async ({ page }) => {

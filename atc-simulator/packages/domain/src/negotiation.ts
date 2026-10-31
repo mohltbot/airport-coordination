@@ -5,6 +5,8 @@
 // so the actor persists state and messages in one assignment.
 import {
     AIRPORTS,
+    US_AIRPORTS,
+    airportsForDestination,
     FUEL_RESERVE_SEC,
     LANDING_GRACE_SEC,
     MAX_EMERGENCY_CANDIDATES,
@@ -820,7 +822,7 @@ export function receiveAirportNegotiation(airport: AirportState, msg: InboundMes
 
 // ================================================================ FLIGHT SIDE
 
-const airportById = (id: AirportId) => AIRPORTS.find(a => a.airportId === id)!
+const airportById = (id: AirportId) => [...AIRPORTS, ...US_AIRPORTS].find(a => a.airportId === id)!
 
 export function isTerminalFlight(flight: FlightState): boolean {
     return flight.phase === "LANDED" || flight.phase === "UNRESOLVED"
@@ -849,7 +851,7 @@ const knownClosed = (flight: FlightState, id: AirportId) => {
 // Airports the flight can physically reach within fuel reserve (and deadline), nearest first.
 export function reachableAirports(flight: FlightState, ctx: NegotiationContext): Array<{ airportId: AirportId; distanceNm: number; travelSec: number }> {
     const now = flightNow(flight, ctx)
-    return AIRPORTS.map(a => {
+    return airportsForDestination(flight.originalDestination).map(a => {
         const d = distanceNm(flight.position, a.position)
         return { airportId: a.airportId as AirportId, distanceNm: d, travelSec: travelSeconds(d, flight.speedKnots) }
     })

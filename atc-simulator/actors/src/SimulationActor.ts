@@ -1,5 +1,6 @@
 import { Actor, Persisted } from "terse-sdk/actor"
 import type {
+    AirportId,
     CommandReceipt,
     ControllerPrincipal,
     EntityId,
@@ -95,6 +96,20 @@ export class SimulationActor extends Actor<null, null> {
         const out = sim.renewWorker(this.root, lease, Date.now())
         this.root = out.root
         return out.lease
+    }
+
+    async prepareTraffic(lease: WorkerLease, terminalIds: EntityId[], usableOrigins?: AirportId[]) {
+        const out = sim.prepareTraffic(this.root, lease, terminalIds, Date.now(), usableOrigins)
+        this.root = out.root
+        return out.pending
+    }
+
+    async cancelTraffic(lease: WorkerLease): Promise<void> {
+        this.root = sim.cancelTraffic(this.root, lease, Date.now())
+    }
+
+    async activateTraffic(lease: WorkerLease): Promise<void> {
+        this.root = sim.activateTraffic(this.root, lease, Date.now())
     }
 
     async beginTick(lease: WorkerLease): Promise<PendingTick | null> {

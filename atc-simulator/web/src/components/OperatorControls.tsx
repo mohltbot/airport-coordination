@@ -9,6 +9,8 @@ export function RunSetup() {
   const [count, setCount] = useState(String(config?.flightCount ?? 10));
   const [seed, setSeed] = useState(String(config?.seed ?? 20261031));
   const [speed, setSpeed] = useState<1 | 5 | 10>(config?.speed ?? 5);
+  const [network, setNetwork] = useState<"US" | "LEGACY">(config?.airportNetwork ?? "US");
+  const [continuous, setContinuous] = useState(config?.continuousTraffic ?? true);
   const [error, setError] = useState<string | null>(null);
   const id = useId();
   const flightCount = Number(count),
@@ -44,6 +46,8 @@ export function RunSetup() {
         flightCount,
         seed: seedNumber,
         speed,
+        airportNetwork: network,
+        continuousTraffic: continuous,
       } satisfies RunConfig);
     } catch (e) {
       setError(
@@ -56,8 +60,15 @@ export function RunSetup() {
   return (
     <section className="run-setup" aria-labelledby={`${id}-title`}>
       <h2 id={`${id}-title`}>Set the airspace</h2>
-      <p className="muted">Three towers. Your choice of traffic.</p>
+      <p className="muted">{network === "US" ? "Ten real airports. One shared sky." : "Three towers. Your choice of traffic."}</p>
       <fieldset disabled={!operator || locked}>
+        <label htmlFor={`${id}-network`}>Airport network</label>
+        <select id={`${id}-network`} value={network} onChange={(event) => setNetwork(event.target.value as "US" | "LEGACY")}>
+          <option value="US">United States · 10 busiest airports</option>
+          <option value="LEGACY">Legacy · 3 airport test network</option>
+        </select>
+        <label className="continuous-setting"><input type="checkbox" checked={continuous} onChange={(event) => setContinuous(event.target.checked)} /> Keep traffic flowing</label>
+        <p className="continuous-note">Launch a new flight after each arrival or unresolved flight, keeping your chosen number active.</p>
         <label htmlFor={`${id}-count`}>
           Flights <span className="muted">1–30</span>
         </label>
@@ -103,7 +114,7 @@ export function RunSetup() {
       </fieldset>
       <p className="setup-summary">
         <strong>{valid ? flightCount : "—"} flights</strong>
-        <span>3 ATC agents</span>
+        <span>{network === "US" ? 10 : 3} ATC agents</span>
       </p>
       {!valid && (
         <p className="error-text">

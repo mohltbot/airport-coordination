@@ -74,7 +74,7 @@ function kindLabel(kind: IncidentKind | string, runwayId: string | null): string
 
 function withDetail(head: string, detail: string | null | undefined): string {
     const d = detail?.trim()
-    return d ? `${head}, ${d}` : head
+    return d ? `${head} ${d}` : head
 }
 
 export const unknownHealth = (detail: string | null = null): DependencyHealth => ({ status: "UNAVAILABLE", detail })
@@ -201,6 +201,7 @@ export function toPublicFlight(f: FlightState, airports: AirportState[], wallNow
         priority: f.priority,
         deadlineSimSec: f.deadlineSimSec,
         originalDestination: f.originalDestination,
+        ...(f.originAirportId ? { originAirportId: f.originAirportId } : {}),
         activeAssignment: as
             ? {
                   airportId: as.airportId,
@@ -231,6 +232,8 @@ export function summarizePayload(type: string, payload: unknown): string {
     }
 }
 
+const spokenCode = (code: string) => code.toLowerCase().replaceAll("_", " ")
+
 function summarize(type: string, payload: unknown): string {
     switch (type) {
         case "INCIDENT_CREATE": {
@@ -255,46 +258,46 @@ function summarize(type: string, payload: unknown): string {
                   : r.occupancySec > RUNWAY_OCCUPANCY_SEC
                     ? "reduced capacity"
                     : "open"
-            return `${p.airportId} ${state}`
+            return `${p.airportId} tower. Airport ${state}.`
         }
         case "LANDING_REQUEST": {
             const p = payload as Payload<"LANDING_REQUEST">
-            return `Landing request, ${p.priority}, fuel ${Math.max(0, Math.floor(p.fuelRemainingSec / 60))} min`
+            return `${p.priority === "EMERGENCY" ? "Mayday, declaring an emergency. Request priority landing." : "Tower, requesting landing."} We have ${Math.max(0, Math.floor(p.fuelRemainingSec / 60))} minutes of fuel remaining.`
         }
         case "LANDING_OFFER": {
             const p = payload as Payload<"LANDING_OFFER">
-            return `Offer ${p.runwayId} at ${simClock(p.slotStartSimSec)}`
+            return `We can offer runway ${p.runwayId} at ${simClock(p.slotStartSimSec)}. Can you accept?`
         }
         case "LANDING_REFUSED": {
             const p = payload as Payload<"LANDING_REFUSED">
-            return withDetail(`Refused: ${p.code}`, p.explanation)
+            return withDetail(`Unable to accept your landing request: ${spokenCode(p.code)}.`, p.explanation)
         }
         case "OFFER_ACCEPT":
-            return `Accepted offer ${(payload as Payload<"OFFER_ACCEPT">).offerId}`
+            return "Roger, we accept that landing slot. Awaiting confirmation."
         case "OFFER_DECLINE":
-            return `Declined offer ${(payload as Payload<"OFFER_DECLINE">).offerId}`
+            return "Unable to accept that slot. We decline the offer."
         case "LANDING_CONFIRMED": {
             const p = payload as Payload<"LANDING_CONFIRMED">
-            return `Confirmed ${p.runwayId} at ${simClock(p.slotStartSimSec)}`
+            return `Your slot is confirmed: runway ${p.runwayId} at ${simClock(p.slotStartSimSec)}. Landing clearance is still required.`
         }
         case "RESERVATION_RELEASE":
-            return `Released reservation ${(payload as Payload<"RESERVATION_RELEASE">).reservationId}`
+            return "Tower, releasing our reserved landing slot."
         case "RESERVATION_REVOKED": {
             const p = payload as Payload<"RESERVATION_REVOKED">
-            return withDetail(`Reservation revoked: ${p.code}`, p.reason)
+            return withDetail(`Your landing reservation is cancelled: ${spokenCode(p.code)}.`, p.reason)
         }
         case "RESERVATION_STATUS_REQUEST":
-            return `Reservation status check, offer ${(payload as Payload<"RESERVATION_STATUS_REQUEST">).offerId}`
+            return "Tower, can you confirm the status of our landing slot?"
         case "RESERVATION_STATUS":
-            return `Reservation status: ${(payload as Payload<"RESERVATION_STATUS">).status}`
+            return `Your landing slot status is ${spokenCode((payload as Payload<"RESERVATION_STATUS">).status)}.`
         case "CLEARANCE_REQUEST":
-            return `Clearance request, reservation ${(payload as Payload<"CLEARANCE_REQUEST">).reservationId}`
+            return "Tower, requesting landing clearance for our confirmed slot."
         case "CLEARANCE_GRANTED": {
             const p = payload as Payload<"CLEARANCE_GRANTED">
-            return `Clearance granted, ${simClock(p.windowStartSimSec)} to ${simClock(p.windowEndSimSec)}`
+            return `Cleared to land within your assigned window, ${simClock(p.windowStartSimSec)} to ${simClock(p.windowEndSimSec)}.`
         }
         case "CLEARANCE_REFUSED":
-            return `Clearance refused: ${(payload as Payload<"CLEARANCE_REFUSED">).code}`
+            return `Unable to clear you to land: ${spokenCode((payload as Payload<"CLEARANCE_REFUSED">).code)}.`
         case "DOMAIN_ACK":
             return `Ack ${(payload as Payload<"DOMAIN_ACK">).resultCode}`
         default:

@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { PublicSnapshot } from "@ghost-tower/domain/public";
 import "./display.css";
 import "./map-presentation.css";
+import { NationalAirspaceMap } from "./NationalAirspaceMap";
+import { US_AIRPORTS } from "../lib/us-geography";
 type Label = {
   id: string;
   x: number;
@@ -19,7 +21,13 @@ type Props = {
   onSelect: (id: string) => void;
   stale: boolean;
 };
-export function AirspaceMap({ snapshot, selectedId, onSelect, stale }: Props) {
+export function AirspaceMap(props: Props) {
+  const national = props.snapshot.airports.length > 0 && props.snapshot.airports.every(
+    (airport) => US_AIRPORTS.some((known) => String(known.airportId) === String(airport.airportId)),
+  );
+  return national ? <NationalAirspaceMap {...props} /> : <LegacyAirspaceMap {...props} />;
+}
+function LegacyAirspaceMap({ snapshot, selectedId, onSelect, stale }: Props) {
   const previous = useRef(snapshot);
   const svgRef = useRef<SVGSVGElement>(null);
   const [scale, setScale] = useState(2.5);
