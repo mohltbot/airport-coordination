@@ -183,13 +183,22 @@ export class SimulationWorker {
         const agentIds = entityIds.filter((e): e is AgentEntityId => e !== "controller")
 
         // Recovery before the first tick: a touchdown the airport recorded is final.
-        const recovered = await reconcileLandings(repo, this.context(lease, `recover:${lease.epoch}`), airportIds)
-        if (recovered.length) this.log(`recovered ${recovered.length} landing(s) from airport receipts`)
-        // Resume sim time from the newest flight sample; beginTick owns the real clock.
-        const firstFlight = agentIds.find(e => e.startsWith("flight:"))
-        if (firstFlight) {
-            const f = await repo.flight(runId, firstFlight.slice(7)).read()
-            this.setStatus({ simNowSec: f.lastAdvancedSimSec })
+        // Best effort: entities of a run still initializing are not readable yet, and
+        // the tick loop retries (and reconcileLandings is idempotent) once they are.
+        let recoveredLandings = false
+        const recover = async () => {
+            if (recoveredLandings) return
+            const recovered = await reconcileLandings(repo, this.context(lease, `recover:${lease.epoch}`), airportIds)
+            if (recovered.length) this.log(`recovered ${recovered.length} landing(s) from airport receipts`)
+            // Resume sim time from the newest flight sample; beginTick owns the real clock.
+            const firstFlight = agentIds.find(e => e.startsWith("flight:"))
+            if (firstFlight) this.setStatus({ simNowSec: (await repo.flight(runId, firstFlight.slice(7)).read()).lastAdvancedSimSec })
+            recoveredLandings = true
+        }
+        try {
+            await recover()
+        } catch (err) {
+            this.setStatus({ state: "RECOVERING", detail: `entities not ready: ${errText(err)}` })
         }
 
         // Relay: reconnect saved identities and route verified messages to actor inboxes.
@@ -270,6 +279,8 @@ export class SimulationWorker {
                     if (tickBusy || ended) return
                     tickBusy = true
                     try {
+                        // Landing recovery must finish before any flight advances again.
+                        await recover()
                         const outcome = await runTick(repo, lease)
                         if (ended) return
                         if (outcome) {
