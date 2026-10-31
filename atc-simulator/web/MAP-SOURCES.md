@@ -46,3 +46,5 @@ THIS SOFTWARE.
 ## Bay Area extension
 
 The network also includes SFO (San Francisco), OAK (Oakland) and SJC (San José), using the same OurAirports coordinates. These three additions have null ranking metadata: they are regional additions, not ranks 11–13. Total active US airports: 13.
+
+Monterey Regional (MRY) is also an active regional addition, using OurAirports coordinates. The Bay Area preset includes Monterey Bay. Total US airports: 14.
