@@ -393,10 +393,10 @@ describe("projections", () => {
         expect(timeline.some(e => e.eventId === ackMsgId)).toBe(false)
         const refused = timeline.find(e => e.eventId === refusedMsgId)
         expect(refused?.status).toBe("REFUSED")
-        expect(refused?.summary.startsWith("Refused: CLOSED")).toBe(true)
+        expect(refused?.summary.startsWith("Unable to accept your landing request: closed.")).toBe(true)
         const request = timeline.find(e => e.eventId === requestMsgId)
         expect(request?.status).toBe("APPLIED")
-        expect(request?.summary).toBe("Landing request, EMERGENCY, fuel 14 min")
+        expect(request?.summary).toBe("Mayday, declaring an emergency. Request priority landing. We have 14 minutes of fuel remaining.")
         expect(request?.simTimeSec).toBe(290)
         expect(timeline.find(e => e.type === "INCIDENT_CREATE")?.summary).toBe("Weather closure created at ALP")
         const decision = timeline.find(e => e.eventId === "flight:F001:job-new")
@@ -429,9 +429,20 @@ describe("projections", () => {
     })
 
     test("summarizePayload formats offers and caps length", () => {
-        expect(summarizePayload("LANDING_OFFER", { runwayId: "R1", slotStartSimSec: 750 })).toBe("Offer R1 at T+12:30")
+        expect(summarizePayload("LANDING_OFFER", { runwayId: "R1", slotStartSimSec: 750 })).toBe("We can offer runway R1 at T+12:30. Can you accept?")
         expect(summarizePayload("COMMAND_RESULT", { outcome: "APPLIED", code: "OK" })).toBe("Command APPLIED")
         expect(summarizePayload("LANDING_REFUSED", { code: "CLOSED", explanation: "x".repeat(500) }).length).toBeLessThanOrEqual(240)
+    })
+
+    test("radio summaries preserve urgency and clearance authority", () => {
+        const request = summarizePayload("LANDING_REQUEST", { priority: "NORMAL", fuelRemainingSec: 600 })
+        expect(request).not.toContain("Mayday")
+        expect(request).toContain("10 minutes")
+        expect(request).not.toContain("smoke")
+        expect(summarizePayload("OFFER_ACCEPT", { offerId: "private-offer-id" })).not.toContain("private-offer-id")
+        expect(summarizePayload("LANDING_CONFIRMED", { runwayId: "R2", slotStartSimSec: 750 })).toContain("Landing clearance is still required")
+        expect(summarizePayload("CLEARANCE_GRANTED", { windowStartSimSec: 750, windowEndSimSec: 780 })).toContain("Cleared to land")
+        expect(summarizePayload("CLEARANCE_REFUSED", { code: "RUNWAY_OCCUPIED" })).toBe("Unable to clear you to land: runway occupied.")
     })
 
     test("buildPublicSnapshot is schema-valid and leaks nothing private", () => {
