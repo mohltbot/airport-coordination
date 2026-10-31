@@ -9,7 +9,7 @@ import {
     HOLDING_RADIUS_NM,
     LANDING_GRACE_SEC,
     LOW_FUEL_EMERGENCY_THRESHOLD_SEC,
-} from "./constants.ts"
+} from "./constants.js"
 import {
     airportEntityId,
     entityHandle,
@@ -28,9 +28,9 @@ import {
     type Tick,
     type TouchdownReceipt,
     type Transition,
-} from "./contracts.ts"
-import { distanceNm, headingDeg, moveToward, polarOffset, travelSeconds } from "./geometry.ts"
-import { stableUuid } from "./stable-id.ts"
+} from "./contracts.js"
+import { distanceNm, headingDeg, moveToward, polarOffset, travelSeconds } from "./geometry.js"
+import { stableUuid } from "./stable-id.js"
 
 const EPS_NM = 1e-6
 const EPS_SEC = 1e-6
@@ -187,6 +187,14 @@ export function simulateMotion(state: FlightState, t0: number, seconds: number):
 
 // ---------------------------------------------------------------- jobs and outbox
 
+// Negotiation integration. The actor passes negotiation.ts functions here so a
+// dropped assignment opens a real round and a terminal flight declines its
+// offers. Without hooks (unit tests) flight.ts queues its own pilot job.
+export type FlightHooks = {
+    reopen?: (state: FlightState, trigger: string) => FlightState
+    terminal?: (state: FlightState) => FlightState
+}
+
 function cancelOpenJobs(jobs: FlightState["jobs"]): FlightState["jobs"] {
     const out: FlightState["jobs"] = {}
     for (const [id, job] of Object.entries(jobs)) {
@@ -245,33 +253,36 @@ export function releaseEnvelope(state: FlightState, assignment: Assignment, ctx:
 
 // Drop the active assignment, queue its release, and leave a renegotiation job.
 // Used for a missed slot and for an invalidated clearance.
-export function abandonAssignment(state: FlightState, trigger: string, ctx: MutationContext): FlightState {
+export function abandonAssignment(state: FlightState, trigger: string, ctx: MutationContext, hooks: FlightHooks = {}): FlightState {
     const a = state.activeAssignment
     if (!a) return state
     const release = releaseEnvelope(state, a, ctx)
     const decisionRevision = state.decisionRevision + 1
     const jobs = cancelOpenJobs(state.jobs)
     const jobId = `${trigger.toLowerCase()}-${a.reservationId}`.slice(0, 128)
-    const next: FlightState = {
+    const alreadyReleased = state.releaseObligations.some(o => o.reservationId === a.reservationId)
+    const dropped: FlightState = {
         ...state,
         activeAssignment: null,
         phase: state.phase === "APPROACH" ? "HOLDING" : state.phase,
-        // Leaving an approach at the runway: capture a fresh hold where we are.
         holdCenter: state.phase === "APPROACH" ? null : state.holdCenter,
         holdAngle: state.phase === "APPROACH" ? null : state.holdAngle,
-        releaseObligations: [
-            ...state.releaseObligations,
-            { airportId: a.airportId, reservationId: a.reservationId, messageId: release.envelope.messageId, acknowledged: false },
-        ],
-        outbox: [...state.outbox, release],
+        releaseObligations: alreadyReleased
+            ? state.releaseObligations
+            : [...state.releaseObligations, { airportId: a.airportId, reservationId: a.reservationId, messageId: release.envelope.messageId, acknowledged: false }],
+        outbox: alreadyReleased ? state.outbox : [...state.outbox, release],
         decisionRevision,
         stateRevision: state.stateRevision + 1,
-        jobs: { ...jobs, [jobId]: pilotJob(jobId, trigger, state, ["REQUEST_LANDING", "HOLD"], ctx.wallNowMs, decisionRevision) },
     }
-    return next
+    if (hooks.reopen) return hooks.reopen(dropped, trigger)
+    return { ...dropped, jobs: { ...jobs, [jobId]: pilotJob(jobId, trigger, state, ["REQUEST_LANDING", "HOLD"], ctx.wallNowMs, decisionRevision) } }
 }
 
-function terminate(state: FlightState, reason: TerminalReason, ctx: MutationContext): FlightState {
+function terminate(state: FlightState, reason: TerminalReason, ctx: MutationContext, hooks: FlightHooks = {}): FlightState {
+    if (hooks.terminal) {
+        const released = hooks.terminal({ ...state, phase: "UNRESOLVED", terminalReason: reason })
+        return { ...released, phase: "UNRESOLVED", terminalReason: reason, activeAssignment: null, holdCenter: null, holdAngle: null, decisionRevision: state.decisionRevision + 1 }
+    }
     const a = state.activeAssignment
     const release = a ? releaseEnvelope(state, a, ctx) : null
     return {
@@ -300,6 +311,7 @@ export function advanceFlight(
     state: FlightState,
     tick: Tick,
     context: MutationContext,
+    hooks: FlightHooks = {},
 ): Transition<FlightState> {
     if (context.runId !== state.runId) return { state, result: rejected(state, "WRONG_RUN") }
     if (state.lastTickId === tick.tickId) return { state, result: duplicate(state) }
@@ -334,27 +346,28 @@ export function advanceFlight(
     }
 
     if (fuel <= 0) {
-        next = terminate(next, "FUEL_EXHAUSTED", context)
+        next = terminate(next, "FUEL_EXHAUSTED", context, hooks)
         return { state: next, result: applied(next) }
     }
     if (next.deadlineSimSec !== null && tick.toSimSec > next.deadlineSimSec + EPS_SEC) {
-        next = terminate(next, "EMERGENCY_DEADLINE", context)
+        next = terminate(next, "EMERGENCY_DEADLINE", context, hooks)
         return { state: next, result: applied(next) }
     }
 
     if (next.phase !== "APPROACH" && slotMissed(next, tick.toSimSec)) {
-        next = abandonAssignment(next, "SLOT_MISSED", context)
+        next = abandonAssignment(next, "SLOT_MISSED", context, hooks)
         return { state: next, result: applied(next) }
     }
     if (next.phase === "APPROACH" && next.activeAssignment && tick.toSimSec > next.activeAssignment.slotStartSimSec + LANDING_GRACE_SEC + EPS_SEC) {
-        next = abandonAssignment(next, "SLOT_MISSED", context)
+        next = abandonAssignment(next, "SLOT_MISSED", context, hooks)
         return { state: next, result: applied(next) }
     }
 
     if (clearanceDue(next, tick.toSimSec)) {
         const jobId = `clearance-${next.activeAssignment!.reservationId}`.slice(0, 128)
         if (!next.jobs[jobId]) {
-            next = { ...next, jobs: { ...next.jobs, [jobId]: pilotJob(jobId, "CLEARANCE_WINDOW", next, ["REQUEST_CLEARANCE", "HOLD"], context.wallNowMs) } }
+            // Trigger "CLEARANCE" survives negotiation's round resets (cancelPilotJobs).
+            next = { ...next, jobs: { ...next.jobs, [jobId]: pilotJob(jobId, "CLEARANCE", next, ["REQUEST_CLEARANCE", "HOLD"], context.wallNowMs) } }
         }
     }
     return { state: next, result: applied(next) }
@@ -368,6 +381,7 @@ export function applyApproachGuard(
     state: FlightState,
     check: ClearanceCheckResult,
     context: MutationContext,
+    hooks: FlightHooks = {},
 ): Transition<FlightState> {
     if (context.runId !== state.runId) return { state, result: rejected(state, "WRONG_RUN") }
     if (isTerminalPhase(state.phase)) return { state, result: rejected(state, "ALREADY_TERMINAL") }
@@ -376,7 +390,7 @@ export function applyApproachGuard(
         return { state, result: rejected(state, "STALE_STATE") }
     }
     if (check.valid) return { state, result: applied(state) }
-    const next = abandonAssignment(state, "CLEARANCE_INVALID", context)
+    const next = abandonAssignment(state, "CLEARANCE_INVALID", context, hooks)
     return { state: next, result: applied(next, "CLOSED") }
 }
 

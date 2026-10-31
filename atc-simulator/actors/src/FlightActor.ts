@@ -10,9 +10,10 @@ import type {
     Tick,
     TouchdownReceipt,
 } from "@ghost-tower/domain/contracts"
-import { markOutboxAccepted, rejected } from "./durability.ts"
-import { advanceEntity, fenceOnly, initializeEntity, receiveEntity } from "./entity.ts"
-import { receiveIncidentStep } from "./incident-receive.ts"
+import { markOutboxAccepted, rejected } from "./durability.js"
+import { advanceEntity, fenceOnly, initializeEntity, receiveEntity } from "./entity.js"
+import { receiveIncidentStep } from "./incident-receive.js"
+import { advanceFlightStep, approachGuardStep, touchdownStep } from "./flight-motion.js"
 
 // One per flight per run; actor ID `<runId>.flight.F001`.
 export class FlightActor extends Actor<null, null> {
@@ -41,7 +42,8 @@ export class FlightActor extends Actor<null, null> {
     }
 
     async advance(context: MutationContext, tick: Tick): Promise<DomainResult> {
-        const step = advanceEntity(this.state, context, tick)
+        // Task 8: movement, fuel, holding, approach and terminal outcomes (flight-motion.ts).
+        const step = advanceFlightStep(this, this.state, context, tick)
         if (step.state) this.state = step.state
         return step.result
     }
@@ -62,11 +64,15 @@ export class FlightActor extends Actor<null, null> {
     }
 
     async applyApproachGuard(context: MutationContext, result: ClearanceCheckResult): Promise<DomainResult> {
-        return fenceOnly(this.state, context) ?? rejected(this.state?.stateRevision ?? 0, "NOT_IMPLEMENTED") // Task 8
+        const step = approachGuardStep(this, this.state, context, result)
+        if (step.state) this.state = step.state
+        return step.result
     }
 
     async recordTouchdown(context: MutationContext, receipt: TouchdownReceipt): Promise<DomainResult> {
-        return fenceOnly(this.state, context) ?? rejected(this.state?.stateRevision ?? 0, "NOT_IMPLEMENTED") // Task 8
+        const step = touchdownStep(this, this.state, context, receipt)
+        if (step.state) this.state = step.state
+        return step.result
     }
 
     async onMessage() {}
