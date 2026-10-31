@@ -33,6 +33,8 @@ export interface SimulationClockApi {
     renewWorker(lease: WorkerLease): Promise<WorkerLease>
     beginTick(lease: WorkerLease): Promise<PendingTick | null>
     ackTickEntity(lease: WorkerLease, tickId: string, entityId: EntityId): Promise<void>
+    /** Batched ack, one SimulationActor write per tick instead of one per entity. */
+    ackTickEntities?(lease: WorkerLease, tickId: string, entityIds: EntityId[]): Promise<void>
     completeTick(lease: WorkerLease, tickId: string): Promise<void>
 }
 
@@ -94,7 +96,7 @@ function parseEntity(entityId: EntityId): { kind: "airport"; id: AirportId } | {
     return null
 }
 
-async function advanceEntity(repo: SimulationRepository, lease: WorkerLease, tick: PendingTick, entityId: EntityId): Promise<void> {
+async function advanceEntity(repo: SimulationRepository, lease: WorkerLease, tick: PendingTick, entityId: EntityId, ack = true): Promise<void> {
     const parsed = parseEntity(entityId)
     if (!parsed) return
     const ctx = tickContext(lease, tick, `${tick.tickId}:${entityId}`)
@@ -105,7 +107,7 @@ async function advanceEntity(repo: SimulationRepository, lease: WorkerLease, tic
         // INVALID_LEASE / WRONG_RUN: a newer worker or a new run owns this entity.
         throw new FencedError(code, `${entityId} rejected tick ${tick.tickId}: ${code}`)
     }
-    await repo.simulation.ackTickEntity(lease, tick.tickId, entityId)
+    if (ack) await repo.simulation.ackTickEntity(lease, tick.tickId, entityId)
 }
 
 // Run (or resume) one tick. Returns null when the run is not RUNNING.
@@ -119,8 +121,12 @@ export async function runTick(repo: SimulationRepository, lease: WorkerLease): P
     const flightIds = tick.entityIds.filter(e => e.startsWith("flight:") && !done.has(e))
 
     // Airports first, then flights (design §4). Entities within a phase are independent.
-    await Promise.all(airportIds.map(e => advanceEntity(repo, lease, tick, e)))
-    await Promise.all(flightIds.map(e => advanceEntity(repo, lease, tick, e)))
+    // With the batched ack a crash before it re-advances every entity on retry, which each
+    // entity answers as a DUPLICATE for this tick ID, so effects still apply once.
+    const batch = typeof repo.simulation.ackTickEntities === "function"
+    await Promise.all(airportIds.map(e => advanceEntity(repo, lease, tick, e, !batch)))
+    await Promise.all(flightIds.map(e => advanceEntity(repo, lease, tick, e, !batch)))
+    if (batch && airportIds.length + flightIds.length > 0) await repo.simulation.ackTickEntities!(lease, tick.tickId, [...airportIds, ...flightIds])
 
     // Touchdown phase. Idempotent by construction: guard and touchdown both key on
     // the flight's current assignment and the airport's touchdown receipts.

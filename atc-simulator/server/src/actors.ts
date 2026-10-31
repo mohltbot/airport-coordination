@@ -221,7 +221,14 @@ export class ActorBackend implements SimulationBackend {
      * projection straight from the actors with the domain redaction functions.
      */
     async readSnapshot(runId: string): Promise<PublicSnapshot | null> {
-        const [published, run] = await this.call(sim => Promise.all([sim.readPublic(runId), sim.readRun(runId)]))
+        // Fast path, one SimulationActor read: a fresh worker projection already carries phase,
+        // config and receipts (publishProjection stamps them from the run at publish time).
+        const published = await this.call(sim => sim.readPublic(runId))
+        if (published && published.phase !== "CONFIGURING" && Date.now() - published.serverWallTimeMs <= PUBLISHED_FRESH_MS) {
+            const actors = (await this.health(published)).actors
+            return { ...published, health: { ...published.health, actors } }
+        }
+        const run = await this.call(sim => sim.readRun(runId))
         if (!run) return published
         const receipts = Object.values(run.commands)
             .sort((a, b) => a.submittedAtWallMs - b.submittedAtWallMs)

@@ -67,6 +67,15 @@ export const RunConfigSchema = z.strictObject({
     speed: SpeedSchema,
     airportNetwork: z.enum(["US", "LEGACY"]).optional(),
     continuousTraffic: z.boolean().optional(),
+    // Bay Area demo (team decision 2026-10-31). All optional; absent keeps earlier behaviour.
+    focusRegion: z.enum(["BAY_AREA"]).nullable().optional(),
+    emergencyCandidateMode: z.enum(["PARALLEL", "SEQUENTIAL"]).optional(),
+    featuredFlightId: z.string().min(1).max(32).nullable().optional(),
+    // Public attribution only; the selected live flights are stored server-side, not in the config.
+    liveTraffic: z
+        .strictObject({ source: z.literal("OpenSky Network"), fetchedAtWallMs: z.number().int().nonnegative() })
+        .nullable()
+        .optional(),
 })
 export type RunConfig = z.infer<typeof RunConfigSchema>
 
