@@ -41,6 +41,9 @@ export function toApiFailure(err: unknown): ApiFailure {
         return new ApiFailure(result.httpStatus ?? CODE_STATUS[result.code] ?? 409, result.code, result.message ?? result.code)
     }
     const message = err instanceof Error ? err.message : String(err)
+    // Actors throw `CODE: message`; the generated client may wrap it, so search the text.
+    const lead = message.match(/\b([A-Z][A-Z_]{3,}): /)
+    if (lead && CODE_STATUS[lead[1]!]) return new ApiFailure(CODE_STATUS[lead[1]!]!, lead[1]!, message.slice(message.indexOf(lead[0]) + lead[0].length).slice(0, 240))
     for (const [code, status] of Object.entries(CODE_STATUS)) {
         if (message.includes(code)) return new ApiFailure(status, code, message.slice(0, 240))
     }

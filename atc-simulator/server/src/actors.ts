@@ -4,9 +4,13 @@
 //   never calls an airport or flight apply/resolve method.
 // - FixtureBackend (fixture.ts): GHOST_TOWER_DEV_FIXTURE=1 development data for early UI work.
 import { existsSync } from "node:fs"
+import { entityActorId } from "@ghost-tower/domain/contracts"
+import { buildPublicSnapshot } from "@ghost-tower/domain/projections"
 import type {
+    AirportEntityId,
     AirportState,
     CommandReceipt,
+    FlightEntityId,
     ControllerPrincipal,
     FlightState,
     IncidentCommand,
@@ -14,6 +18,7 @@ import type {
     RunConfig,
     RunDescriptor,
     RunPhase,
+    SimulationState,
 } from "@ghost-tower/domain/contracts"
 import type { AppConfig } from "./config.ts"
 import { fail, toApiFailure } from "./errors.ts"
@@ -40,20 +45,22 @@ export interface SimulationBackend {
 
 // ---------------------------------------------------------------- ActorRepository
 
-/** SimulationActor methods from plan §3, plus the two run reads the gateway needs (see report). */
+/** SimulationActor methods the gateway uses (actors/src/SimulationActor.ts). Errors arrive as `CODE: message`. */
 export interface SimulationActorApi {
     createRun(requestId: string, config: RunConfig): Promise<RunDescriptor>
+    activeRun(): Promise<RunDescriptor | null>
+    getRun(runId: string): Promise<RunDescriptor | null>
+    /** Internal aggregate: server-side only, projected before anything reaches a browser. */
+    readRun(runId: string): Promise<SimulationState | null>
     setRunPhase(runId: string, phase: RunPhase, operationId: string): Promise<RunDescriptor>
     setSpeed(runId: string, speed: 1 | 5 | 10, operationId: string): Promise<RunDescriptor>
     resetRun(runId: string, operationId: string): Promise<RunDescriptor>
     submitCommand(command: IncidentCommand, principal: ControllerPrincipal): Promise<CommandReceipt>
-    readCommand(runId: string, commandId: string): Promise<CommandReceipt | null>
+    readCommand(runId: string, commandId: string): Promise<CommandReceipt>
     readPublic(runId: string): Promise<PublicSnapshot | null>
-    readActiveRun?(): Promise<RunDescriptor | null>
-    readRun?(runId: string): Promise<RunDescriptor | null>
 }
 export interface EntityActorApi<S> {
-    read(): Promise<S>
+    read(): Promise<S | null>
 }
 
 type GeneratedActors = {
@@ -79,17 +86,17 @@ export class ActorRepository {
     simulation(): SimulationActorApi {
         return this.actors.SimulationActor.get(this.simulationActorId)
     }
-    airport(runId: string, airportId: string): EntityActorApi<AirportState> | null {
-        return this.actors.AirportActor?.get(`${runId}/airport/${airportId}`) ?? null
+    airport(runId: string, entityId: AirportEntityId): EntityActorApi<AirportState> | null {
+        return this.actors.AirportActor?.get(entityActorId(runId, entityId)) ?? null
     }
-    flight(runId: string, flightId: string): EntityActorApi<FlightState> | null {
-        return this.actors.FlightActor?.get(`${runId}/flight/${flightId}`) ?? null
+    flight(runId: string, entityId: FlightEntityId): EntityActorApi<FlightState> | null {
+        return this.actors.FlightActor?.get(entityActorId(runId, entityId)) ?? null
     }
 }
 
 // ---------------------------------------------------------------- ActorBackend
 
-const LOCKED: ReadonlySet<RunPhase> = new Set(["STARTING", "RUNNING", "PAUSED", "COMPLETED"])
+const LOCKED: ReadonlySet<RunPhase> = new Set(["STARTING", "RUNNING", "PAUSED"])
 const PHASE_FOR: Record<LifecycleAction, RunPhase> = { start: "STARTING", pause: "PAUSED", resume: "RUNNING" }
 
 export class ActorBackend implements SimulationBackend {
@@ -124,15 +131,11 @@ export class ActorBackend implements SimulationBackend {
     }
 
     async activeRun() {
-        return this.call(sim => (sim.readActiveRun ? sim.readActiveRun() : Promise.resolve(null)))
+        return this.call(sim => sim.activeRun())
     }
 
     async getRun(runId: string) {
-        return this.call(async sim => {
-            if (sim.readRun) return sim.readRun(runId)
-            const snap = await sim.readPublic(runId)
-            return snap ? { runId: snap.runId, phase: snap.phase, config: snap.config } : null
-        })
+        return this.call(sim => sim.getRun(runId))
     }
 
     async createRun(requestId: string, config: RunConfig) {
@@ -160,11 +163,58 @@ export class ActorBackend implements SimulationBackend {
     }
 
     async readCommand(runId: string, commandId: string) {
-        return this.call(sim => sim.readCommand(runId, commandId))
+        try {
+            return await this.call(sim => sim.readCommand(runId, commandId))
+        } catch (err) {
+            if ((err as { status?: number }).status === 404) return null
+            throw err
+        }
     }
 
-    async readSnapshot(runId: string) {
-        return this.call(sim => sim.readPublic(runId))
+    /**
+     * Worker-published snapshot with fresh run phase/config and ledger receipts merged in, so command
+     * updates show while paused. Before the worker publishes (CONFIGURING, worker down), gather a
+     * projection straight from the actors with the domain redaction functions.
+     */
+    async readSnapshot(runId: string): Promise<PublicSnapshot | null> {
+        const [published, run] = await this.call(sim => Promise.all([sim.readPublic(runId), sim.readRun(runId)]))
+        if (!run) return published
+        const receipts = Object.values(run.commands)
+            .sort((a, b) => a.submittedAtWallMs - b.submittedAtWallMs)
+            .slice(-100)
+            .map(e => e.receipt)
+        const health = await this.health()
+        if (published) {
+            return { ...published, phase: run.phase, config: run.config, commands: receipts, health: { ...published.health, actors: health.actors } }
+        }
+        return this.gather(run, health)
+    }
+
+    private async gather(run: SimulationState, health: Health): Promise<PublicSnapshot> {
+        const repo = this.repo!
+        const airports: AirportState[] = []
+        const flights: FlightState[] = []
+        await Promise.all(
+            run.entities.map(async e => {
+                if (e.entityId === "controller") return
+                if (e.entityId.startsWith("airport:")) {
+                    const a = await repo.airport(run.runId, e.entityId as AirportEntityId)?.read().catch(() => null)
+                    if (a) airports.push(a)
+                } else {
+                    const f = await repo.flight(run.runId, e.entityId as FlightEntityId)?.read().catch(() => null)
+                    if (f) flights.push(f)
+                }
+            }),
+        )
+        return buildPublicSnapshot({
+            run,
+            airports,
+            flights,
+            wallNowMs: Date.now(),
+            projectionVersion: run.projectionVersion,
+            health: { ...health, worker: { status: "UNAVAILABLE", detail: "No worker projection published yet" } },
+            agentMode: this.config.agentMode,
+        })
     }
 
     async health(): Promise<Health> {

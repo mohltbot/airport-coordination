@@ -71,7 +71,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
         dataDir,
         authDir: resolve(dataDir, "auth"),
         webDistDir: resolve(PROJECT_DIR, "web/dist"),
-        generatedClientPath: resolve(PROJECT_DIR, "server/generated/index.js"),
+        generatedClientPath: resolve(PROJECT_DIR, env.TERSE_GENERATED_CLIENT?.trim() || "server/generated/index.js"),
         simulationActorId: SIMULATION_ACTOR_ID,
         terseActorUrl: env.TERSE_ACTOR_URL?.trim() || "http://127.0.0.1:7100",
         modelConfigured: Boolean(env.OPENAI_API_KEY?.trim() && env.OPENAI_MODEL?.trim()),

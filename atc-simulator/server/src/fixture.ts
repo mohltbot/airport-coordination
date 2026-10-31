@@ -63,10 +63,11 @@ export class FixtureBackend implements SimulationBackend {
         const replay = this.createRequests.get(requestId)
         if (replay) return { ...this.run(replay).descriptor }
         const active = this.activeRunId ? this.run(this.activeRunId) : null
-        if (active && active.descriptor.phase !== "CONFIGURING") {
+        if (active && ["STARTING", "RUNNING", "PAUSED"].includes(active.descriptor.phase)) {
             throw fail(409, "RUN_ACTIVE", `Run ${active.descriptor.runId.slice(0, 8)} is ${active.descriptor.phase}. Reset it before configuring a new run.`)
         }
-        if (active) {
+        if (active?.descriptor.phase === "COMPLETED") active.fenced = true
+        else if (active) {
             active.descriptor = { ...active.descriptor, config }
             this.createRequests.set(requestId, active.descriptor.runId)
             return { ...active.descriptor }
