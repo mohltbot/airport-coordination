@@ -2,6 +2,28 @@
 
 Ghost Tower, YC Haunted Hacks, 2026-10-31. Top 8 finalists get 2 minutes each, judging 16:00 to 17:00.
 
+## If anything needs restarting
+
+Each runs in its own terminal tab from `atc-simulator/`, in this order:
+
+```bash
+npx -y @relaycast/engine@12.3.0
+```
+
+```bash
+bun run actors:dev
+```
+
+```bash
+bun --watch server/src/main.ts
+```
+
+```bash
+AGENT_MODE=live RELAY_EXPECTED_BOOKING_WALL_SEC=12 bun run worker:local-relay
+```
+
+The worker line matters: without `AGENT_MODE=live` decisions fall back to rules, and without the booking setting the landing takes about a minute longer. After any web change, run `bun run build` so the tunnel serves it.
+
 ## Before walking up
 
 Run all of these on the Mac mini.
@@ -18,7 +40,9 @@ cd atc-simulator && bun run demo:bay-emergency -- --speed 10 --smoke-on-enter
 
 It resets the run, creates 10 Bay Area flights with live OpenSky callsigns, closes both Monterey runways, then waits. Press Enter on the line marked "SMOKE" in the script below.
 
-Measured at 10x with live model decisions (run 955823f7): Monterey refuses 1.6 s after the smoke, San Jose confirms 5.5 s, clearance 67 s, touchdown 2:18.
+Measured at 10x with live model decisions: Monterey refuses about 2 s after the smoke, San Jose confirms in 5 to 7 s. With the 12 s booking setting, touchdown came 72 s after the smoke when Enter was pressed 10 to 15 s after the "Press Enter" prompt, and 133 s when pressed sooner. Press Enter about 10 to 15 s after the prompt appears.
+
+Phone-driven alternative (Siddharth's run): start a clean run with no incidents and trigger them from the phone. Close BOTH Monterey runways (R1 and R2) before the smoke, because one closed runway leaves Monterey able to offer.
 
 ## Script, 2 minutes
 
