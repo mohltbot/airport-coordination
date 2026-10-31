@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { PublicSnapshot } from "@ghost-tower/domain/public";
 import { US_AIRPORTS, US_STATES, projectUs } from "../lib/us-geography";
 import "./national-map.css";
@@ -71,6 +71,7 @@ export function NationalAirspaceMap({ snapshot, selectedId, onSelect, stale }: P
   const unit = 1 / Math.max(.3, Math.min(size.width / width, size.height / height));
   const keySelect = (e: KeyboardEvent, id: string) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(id); } };
   const selectedFlight = snapshot.flights.find(f => f.entityId === selectedId);
+  const [airportTextWidths, setAirportTextWidths] = useState<Record<string, number>>({});
   const labels: Label[] = [];
   const entries = [
     ...snapshot.airports.map(a => ({ id: a.entityId, point: a.position, title: a.airportId, airport: true, emergency: false })),
@@ -79,18 +80,21 @@ export function NationalAirspaceMap({ snapshot, selectedId, onSelect, stale }: P
   const markerPoints = entries.map(e => e.point);
   for (const entry of entries) {
     if (!visible(entry.point) || (!entry.airport && zoom < 2)) continue;
-    const w = (entry.title.length * 7.5 + 14) * unit;
+    const w = (entry.airport ? (airportTextWidths[entry.title] ?? entry.title.length * 9) + 20 : entry.title.length * 7.5 + 14) * unit;
     const h = 24 * unit;
-    // Airport codes stay anchored directly above their own ring.
-    if (entry.airport && zoom >= 2) {
-      labels.push({ ...entry, x: entry.point.x - w / 2, y: entry.point.y - h - 14 * unit, width: w, height: h });
-      continue;
-    }
     const candidates: Point[] = [];
+    if (entry.airport) candidates.push({ x: entry.point.x - w / 2, y: entry.point.y - h - 14 * unit });
     for (const radius of [14, 34, 58, 82, 112]) for (const [dx,dy] of [[1,-1],[1,1],[-1,-1],[-1,1],[0,-1],[0,1]]) candidates.push({ x: Math.max(x + 3*unit, Math.min(x+width-w-3*unit, entry.point.x + dx!*radius*unit - (dx === -1 ? w : dx === 0 ? w/2 : 0))), y: Math.max(y+3*unit, Math.min(y+height-h-3*unit, entry.point.y + dy!*radius*unit - (dy === -1 ? h : 0))) });
     const place = candidates.find(c => !labels.some(l => c.x < l.x+l.width+4*unit && c.x+w+4*unit > l.x && c.y < l.y+l.height+4*unit && c.y+h+4*unit > l.y) && !markerPoints.some(p => p.x > c.x-6*unit && p.x < c.x+w+6*unit && p.y > c.y-6*unit && p.y < c.y+h+6*unit));
     if (place) labels.push({ ...entry, ...place, width: w, height: h });
   }
+  useLayoutEffect(() => {
+    const widths: Record<string, number> = {};
+    svgRef.current?.querySelectorAll<SVGTextElement>('.national-label.is-airport text').forEach(text => {
+      widths[text.textContent ?? ''] = text.getComputedTextLength() / unit;
+    });
+    setAirportTextWidths(previous => Object.entries(widths).some(([code, value]) => Math.abs((previous[code] ?? 0) - value) > .25) ? { ...previous, ...widths } : previous);
+  });
   return <section className="map-panel national-map" aria-label="United States airspace map">
     <div className="national-map-heading"><div><h2>National network</h2><p>{stale ? "Position updates stopped" : "Contiguous United States"} <span>· Compressed simulation scale</span></p></div><div className="national-map-tools"><label className="national-region"><span className="national-sr-only">Map region</span><select aria-label="Map region" value={regionName} onChange={e => region(e.target.value)}><option value="custom" disabled>Custom view</option><option value="network">US network</option><option value="bay">Bay Area</option><option value="northeast">New York · Northeast</option><option value="southwest">Southwest</option></select></label><div className="national-map-zoom" role="group" aria-label="Map zoom"><button aria-label="Zoom out" disabled={zoom <= 1} onClick={() => changeZoom(-Math.max(.5,zoom*.35))}>−</button><button onClick={fit} aria-label="Reset map view">Fit</button><button aria-label="Zoom in" disabled={zoom >= 20} onClick={() => changeZoom(Math.max(.5,zoom*.5))}>+</button></div></div></div>
     <svg ref={svgRef} className="national-map-svg" tabIndex={0}
@@ -123,7 +127,7 @@ export function NationalAirspaceMap({ snapshot, selectedId, onSelect, stale }: P
       <g className="national-routes">{snapshot.flights.map(f => { const a = snapshot.airports.find(a => a.airportId === f.activeAssignment?.airportId); if (!a || ["LANDED","UNRESOLVED"].includes(f.phase)) return null; const p = positions[f.entityId] ?? f.position; return <line key={f.entityId} className={`national-assignment ${selectedId === f.entityId || selectedId === a.entityId ? "is-selected" : ""}`} data-flight-id={f.flightId} data-airport-id={a.airportId} x1={p.x} y1={p.y} x2={a.position.x} y2={a.position.y} vectorEffect="non-scaling-stroke"><title>{f.callsign} → {a.airportId}: assigned destination</title></line>; })}{selectedFlight?.proposals.map(offer => { const a = snapshot.airports.find(a => a.airportId === offer.airportId); const p = positions[selectedFlight.entityId] ?? selectedFlight.position; return a && <line key={offer.offerId} className="national-offer" x1={p.x} y1={p.y} x2={a.position.x} y2={a.position.y} vectorEffect="non-scaling-stroke"><title>{a.airportId}: unconfirmed offer</title></line>; })}</g>
       {snapshot.airports.map(a => { const known = US_AIRPORTS.find(k => String(k.airportId) === String(a.airportId))!; return <g key={a.entityId} role="button" tabIndex={0} aria-label={`${a.airportId}, ${known.name}, ${a.status}, queue ${a.queue.length}`} className={`national-airport status-${a.status.toLowerCase()} ${a.entityId === selectedId || selectedFlight?.activeAssignment?.airportId === a.airportId ? "is-selected" : ""}`} transform={`translate(${a.position.x} ${a.position.y}) scale(${unit})`} onClick={() => select(a.entityId)} onKeyDown={e => keySelect(e,a.entityId)}><title>{known.name} · {known.city} · {a.status}</title><circle className="national-hit" r="22"/><circle className="national-airport-outer" r="9"/><circle className="national-airport-inner" r="4"/><path className="national-airport-runway" d={a.status === "CLOSED" ? "M-3-3 3 3M-3 3 3-3" : "M-1.5-3v6M1.5-3v6"}/></g>; })}
       {snapshot.flights.map(f => { const p = positions[f.entityId] ?? f.position; return <g key={f.entityId} role="button" tabIndex={0} aria-label={`${f.callsign}, ${f.phase}, ${f.priority}`} className={`national-aircraft ${f.priority === "EMERGENCY" ? "is-emergency" : ""} ${f.entityId === selectedId ? "is-selected" : ""} ${f.phase === "LANDED" ? "is-landed" : ""}`} transform={`translate(${p.x} ${p.y}) scale(${unit})`} onClick={() => select(f.entityId)} onKeyDown={e => keySelect(e,f.entityId)}><title>{f.callsign} · {f.phase}</title><circle className="national-hit" r="22"/><path className="national-plane" d="M0-8 5.5 6 0 3-5.5 6Z" transform={`rotate(${f.headingDeg})`}/></g>; })}
-      {labels.map(l => <g key={`label-${l.id}`} className={`national-label ${l.airport ? "is-airport" : ""} ${l.id === selectedId ? "is-selected" : ""} ${l.emergency ? "is-emergency" : ""} ${l.id === featured?.entityId ? "is-featured" : ""}`} role="button" tabIndex={0} aria-label={`Select ${l.title}`} onClick={() => select(l.id)} onKeyDown={e => keySelect(e,l.id)}><line x1={l.point.x} y1={l.point.y} x2={Math.max(l.x,Math.min(l.x+l.width,l.point.x))} y2={Math.max(l.y,Math.min(l.y+l.height,l.point.y))} vectorEffect="non-scaling-stroke"/><rect x={l.x} y={l.y} width={l.width} height={l.height} rx={5*unit} vectorEffect="non-scaling-stroke"/><text x={l.x+7*unit} y={l.y+16*unit} style={{fontSize: (l.airport ? 14 : 12)*unit}}>{l.title}</text></g>)}
+      {labels.map(l => <g key={`label-${l.id}`} className={`national-label ${l.airport ? "is-airport" : ""} ${l.id === selectedId ? "is-selected" : ""} ${l.emergency ? "is-emergency" : ""} ${l.id === featured?.entityId ? "is-featured" : ""}`} role="button" tabIndex={0} aria-label={`Select ${l.title}`} onClick={() => select(l.id)} onKeyDown={e => keySelect(e,l.id)}><line x1={l.point.x} y1={l.point.y} x2={Math.max(l.x,Math.min(l.x+l.width,l.point.x))} y2={Math.max(l.y,Math.min(l.y+l.height,l.point.y))} vectorEffect="non-scaling-stroke"/><rect x={l.x} y={l.y} width={l.width} height={l.height} rx={5*unit} vectorEffect="non-scaling-stroke"/><text textAnchor={l.airport ? "middle" : "start"} x={l.airport ? l.x+l.width/2 : l.x+7*unit} y={l.y+16*unit} style={{fontSize: (l.airport ? 14 : 12)*unit}}>{l.title}</text></g>)}
     </svg>
     <div className="national-map-footer"><span><svg width="26" height="12" aria-hidden="true"><line className="national-assignment is-selected" x1="1" x2="25" y1="6" y2="6"/></svg>Assigned destination</span><span><svg width="26" height="12" aria-hidden="true"><line className="national-offer" x1="1" x2="25" y1="6" y2="6"/></svg>Unconfirmed offer</span><span className="national-scale">Geography: U.S. Census Bureau</span></div>
     {!snapshot.airports.some(a => visible(a.position)) && <p className="national-map-empty">No active towers in this view.</p>}

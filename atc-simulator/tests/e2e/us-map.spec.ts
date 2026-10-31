@@ -26,9 +26,16 @@ test('Bay Area preset preserves view across snapshots and has honest regional co
   for (const code of ['SFO', 'OAK', 'SJC', 'MRY']) {
     const label = page.getByRole('button', { name: `Select ${code}`, exact: true });
     const rect = await label.locator('rect').boundingBox();
-    const marker = await page.locator('.national-airport').filter({ has: page.locator('title', { hasText: snapshot.airports.find(a => a.airportId === code)!.name }) }).locator('.national-airport-outer').boundingBox();
-    expect(Math.abs(rect!.x + rect!.width / 2 - marker!.x - marker!.width / 2)).toBeLessThan(1);
-    expect(rect!.y + rect!.height).toBeLessThan(marker!.y);
+    const text = await label.locator('text').boundingBox();
+    await expect(label.locator('text')).toHaveAttribute('text-anchor', 'middle');
+    expect(Math.abs(rect!.x + rect!.width / 2 - text!.x - text!.width / 2)).toBeLessThan(1);
+    expect(rect!.width).toBeGreaterThan(text!.width + 10);
+
+  }
+  const boxes = await page.locator('.national-label.is-airport rect').evaluateAll(nodes => nodes.map(n => { const r = n.getBoundingClientRect(); return {x:r.x,y:r.y,w:r.width,h:r.height}; }));
+  for (let i=0; i<boxes.length; i++) for (let j=i+1; j<boxes.length; j++) {
+    const a=boxes[i]!, b=boxes[j]!;
+    expect(a.x+a.w <= b.x || b.x+b.w <= a.x || a.y+a.h <= b.y || b.y+b.h <= a.y).toBe(true);
   }
   const view=await page.locator('.national-map-svg').getAttribute('viewBox');
   const next=structuredClone(snapshot); next.projectionVersion++;
