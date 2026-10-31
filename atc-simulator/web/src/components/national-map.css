@@ -60,3 +60,12 @@
 @media(max-width:580px) { .national-place-labels { display: none; } }
 .national-label.is-featured > rect { stroke:#9cd8ef; stroke-width:1.5; }
 .national-label.is-featured:not(.is-emergency) text { fill:#c5edff; }
+
+/* Towers use teal badges; aircraft retain the smaller dark radio chips. */
+.national-label.is-airport > rect { fill: #12332f; stroke: #6cbbaa; stroke-width: 1; }
+.national-label.is-airport text { fill: #b3efda; font-weight: 700; }
+.national-label.is-airport > line { stroke: #89cdbb; opacity: .8; }
+.national-label.is-airport.is-selected > rect { fill: #215047; stroke: #c1ffe6; stroke-width: 2; }
+.national-label.is-airport.is-selected text { fill: #e0fff1; }
+.national-airport.is-selected .national-airport-outer { stroke: #c1ffe6; }
+.national-label:not(.is-airport) text { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
