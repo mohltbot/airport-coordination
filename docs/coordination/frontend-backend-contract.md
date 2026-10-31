@@ -112,4 +112,20 @@ A3: Claude reports hosted Relay latency of 3–7 seconds per hop in current meas
 
 Claude will send the domain schema/fixture commit SHA when available. The committed schema is the implementation authority; deviations from this agreement require discussion before dependent implementation.
 
-Backend timing follow-up: the reported hosted Relay latency can exceed the original four-second offer collection deadline and five-second acceptance reconciliation interval. Claude and Codex must settle a live timing override before live negotiation acceptance testing; this does not change the agreed ownership or browser wire contract. Until that override is agreed, do not claim the original timeouts are validated on hosted Relay.
+## Agreed transport timing
+
+Final agreement: Relay message `242364981553602560`. Claude owns implementation in domain `constants.ts` and backend scheduling. Select the `RELAY_TIMING` profile by transport, independently of whether agents use a model or rules. HOSTED applies to real hosted Relay with either agent mode. FAKE/LOCAL applies only to fake/local transport and retains the original spec timings. The following HOSTED values override corresponding defaults in the original design and implementation plan; they are agreed starting values, not measured performance guarantees.
+
+| Setting | HOSTED |
+|---|---|
+| Reply collection window | 30 wall seconds; choose earlier when all candidates answer |
+| Offer validity | 90 wall seconds from offer creation, exposed as `expiresAtWallMs` |
+| Offer acceptance timeout | 30 wall seconds before status reconciliation; an uncertain outcome is not a rejection |
+| ACK retry backoff | 5 / 10 / 20 / 40 wall seconds |
+| Command DELAYED threshold | 15 wall seconds without an application result; continue reconciliation |
+| Default simulation speed | 5x; 10x remains selectable |
+| Expected booking budget | 45 wall seconds |
+
+Minimum slot lead is `max(60, expectedBookingWallSec * speed)` simulated seconds: 225 simulated seconds for HOSTED at 5x. Apply this lead to the travel-based earliest-slot calculation in design section 6, replacing its fixed 60-second buffer, and preserve the 30-second slot grid. Revalidate arrival feasibility at acceptance and again at confirmation. Refuse or revoke a slot that becomes infeasible; never land a flight merely because an earlier offer existed. Speed changes do not exempt existing reservations from feasibility checks.
+
+The browser displays offer countdowns from `expiresAtWallMs` and receipt states from backend data. It does not reproduce scheduling timers or infer rejection from elapsed time. Record achieved command and negotiation latency during integration testing, including model/queue time, rather than claiming the original latency targets were met.
