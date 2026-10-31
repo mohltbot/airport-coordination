@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { PublicSnapshot } from "@ghost-tower/domain/public";
 import "./display.css";
+import "./map-presentation.css";
 type Label = {
   id: string;
   x: number;
@@ -237,8 +238,9 @@ export function AirspaceMap({ snapshot, selectedId, onSelect, stale }: Props) {
             <path
               d="M20 0H0V20"
               fill="none"
-              stroke="var(--border)"
-              strokeWidth=".25"
+              stroke="rgba(159, 169, 183, .09)"
+              strokeWidth=".5"
+              vectorEffect="non-scaling-stroke"
             />
           </pattern>
         </defs>
@@ -313,7 +315,7 @@ export function AirspaceMap({ snapshot, selectedId, onSelect, stale }: Props) {
         {snapshot.airports.map((a) => (
           <g
             key={a.entityId}
-            className={`map-airport ${a.entityId === selectedId ? "map-selected" : ""}`}
+            className={`map-airport ${a.entityId === selectedId ? "map-selected" : ""} ${a.status === "CLOSED" ? "map-airport-closed" : a.status === "OPEN" ? "map-airport-open" : "map-airport-limited"} ${selected?.activeAssignment?.airportId === a.airportId ? "map-connected" : ""}`}
             transform={`translate(${a.position.x} ${a.position.y})`}
             role="button"
             tabIndex={0}
@@ -328,25 +330,15 @@ export function AirspaceMap({ snapshot, selectedId, onSelect, stale }: Props) {
               width={44 * unit}
               height={44 * unit}
             />
-            <rect
-              x="-3.5"
-              y="-3.5"
-              width="7"
-              height="7"
-              fill={
-                a.status === "CLOSED"
-                  ? "url(#airport-closed-hatch)"
-                  : "var(--panel)"
-              }
-              stroke={
-                a.status === "OPEN"
-                  ? "var(--green)"
-                  : a.status === "CLOSED"
-                    ? "var(--red)"
-                    : "var(--amber)"
-              }
-              strokeWidth=".8"
-            />
+            <g className="map-airport-glyph" transform={`scale(${unit})`}>
+              <circle className="map-airport-ring" r="10" />
+              <circle className="map-airport-core" r="5" />
+              {a.status === "CLOSED" ? (
+                <path className="map-airport-detail" d="M-3-3 3 3M-3 3 3-3" />
+              ) : (
+                <path className="map-airport-detail" d="M-1.5-3.5v7M1.5-3.5v7" />
+              )}
+            </g>
           </g>
         ))}
         {snapshot.flights.map((f) => {
@@ -365,7 +357,8 @@ export function AirspaceMap({ snapshot, selectedId, onSelect, stale }: Props) {
               <circle className="map-hit" r={22 * unit} />
               <path
                 d="M0 -2.8L2 2L0 1.1L-2 2Z"
-                transform={`rotate(${f.headingDeg})`}
+                transform={`rotate(${f.headingDeg}) scale(${unit * 2.8})`}
+                vectorEffect="non-scaling-stroke"
               />
             </g>
           );
@@ -373,7 +366,7 @@ export function AirspaceMap({ snapshot, selectedId, onSelect, stale }: Props) {
         {labels.map((l) => (
           <g
             key={`label-${l.id}`}
-            className={`map-label ${l.airport ? "map-label-airport" : ""} ${l.urgent ? "map-label-urgent" : ""}`}
+            className={`map-label ${l.airport ? "map-label-airport" : ""} ${l.id === selectedId ? "map-label-selected" : ""} ${snapshot.flights.some((flight) => flight.entityId === l.id && flight.priority === "EMERGENCY") ? "map-label-emergency" : ""}`}
             role="button"
             tabIndex={0}
             aria-label={`Select ${l.lines.join(", ")}`}
@@ -382,6 +375,7 @@ export function AirspaceMap({ snapshot, selectedId, onSelect, stale }: Props) {
           >
             <line
               className="map-leader"
+              vectorEffect="non-scaling-stroke"
               x1={l.anchor.x}
               y1={l.anchor.y}
               x2={Math.max(l.x, Math.min(l.x + l.width, l.anchor.x))}
@@ -392,7 +386,8 @@ export function AirspaceMap({ snapshot, selectedId, onSelect, stale }: Props) {
               y={l.y}
               width={l.width}
               height={l.height}
-              rx={2 * unit}
+              rx={5 * unit}
+              vectorEffect="non-scaling-stroke"
             />
             {l.lines.map((line, i) => (
               <text
@@ -413,8 +408,8 @@ export function AirspaceMap({ snapshot, selectedId, onSelect, stale }: Props) {
       <div className="map-legend">
         <span><svg width="26" height="12" aria-hidden="true"><line x1="1" y1="6" x2="25" y2="6" className="map-assignment map-assignment-selected" /></svg> Assigned destination</span>
         <span><svg width="26" height="12" aria-hidden="true"><line x1="1" y1="6" x2="25" y2="6" stroke="var(--amber)" strokeWidth="1.2" strokeDasharray="6 4" /></svg> Offer · unconfirmed</span>
-        <span>⊠ Closed</span>
-        <span>▲ Aircraft</span>
+        <span><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="none" stroke="var(--red)" /><path d="m5 5 6 6m-6 0 6-6" stroke="var(--red)" /></svg> Closed airport</span>
+        <span><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2 13 13 8 10 3 13Z" fill="var(--cyan)" /></svg> Aircraft</span>
       </div>
     </section>
   );

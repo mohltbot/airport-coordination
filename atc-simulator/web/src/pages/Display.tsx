@@ -139,8 +139,8 @@ export function Display() {
       </header>
       {sim.isFixture && (
         <div className="app-banner fixture-banner">
-          DEVELOPMENT DATA · Static fixture · No live agents or Relay activity ·
-          Controls disabled
+          <strong>Development preview</strong>
+          <span>Static fixture · No live traffic · Controls disabled</span>
         </div>
       )}
       {(sim.error || actionError) && (

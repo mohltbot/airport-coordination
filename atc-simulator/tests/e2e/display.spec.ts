@@ -8,7 +8,7 @@ test.describe('Display browser contract tests (mock transport)', () => {
     await page.locator('.fleet-flight').filter({ hasText: 'GHOST 001' }).click();
     for (let i = 1; i <= 10; i++) { const next = fixture(); next.projectionVersion += i; next.flights[0]!.position.x += i; next.flights[0]!.lastDecisionReason = `Update ${i}`; await h.emit('snapshot', next); }
     await expect(page.getByRole('heading', { name: 'GHOST 001', exact: true })).toBeVisible();
-    await expect(page.locator('.fleet-selected')).toContainText('GHOST 001'); await expect(page.getByText('Update 10')).toBeVisible();
+    await expect(page.locator('.fleet-selected')).toContainText('GHOST 001'); await page.getByRole('tab', { name: 'State', exact: true }).click(); await expect(page.getByText('Update 10')).toBeVisible();
   });
   test('creates the chosen count and starts with UUID operation and CSRF', async ({ page }) => {
     const h = await harness(page, bootstrap(null, 'OPERATOR')); await page.goto('/');
@@ -39,6 +39,6 @@ test.describe('Display browser contract tests (mock transport)', () => {
   test('viewer sees operational state with mutations disabled', async ({ page }) => {
     const h = await harness(page, bootstrap(fixture(), 'VIEWER')); await h.open('/');
     await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeDisabled();
-    await page.getByRole('button', { name: /^Select ALP, CLOSED/ }).click(); await expect(page.getByRole('button', { name: 'Weather closure', exact: true })).toBeDisabled();
+    await page.getByRole('button', { name: /^Select ALP, CLOSED/ }).click(); await page.getByRole('tab', { name: 'Controls', exact: true }).click(); await expect(page.getByRole('button', { name: 'Weather closure', exact: true })).toBeDisabled();
   });
 });

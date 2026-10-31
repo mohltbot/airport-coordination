@@ -1,0 +1,36 @@
+/* Geometry uses nautical miles; glyphs and labels retain screen size. */
+.map-panel .map-caption { padding: 12px 20px; border-bottom-color: #ffffff0f; }
+.map-panel .map-caption > span { color: #9fa9b7; font: 12px var(--mono, ui-monospace); letter-spacing: .015em; }
+.map-panel .map-svg { background: #0c1015; }
+.map-panel .map-label text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: .01em; fill: #dce2eb; }
+.map-panel .map-label > rect { fill: #10151bed; stroke: #b5c5d926; stroke-width: .7; transition: fill 160ms ease, stroke 160ms ease; }
+.map-panel .map-label-airport text:first-of-type { font-weight: 600; fill: #f5f6f8; }
+.map-panel .map-label-airport text:last-of-type { fill: #9fa9b7; }
+.map-panel .map-leader { stroke: #8492a4; stroke-width: .65; opacity: .3; }
+.map-panel .map-label-selected > rect { stroke: #8ccfff; fill: #142433; }
+.map-panel .map-label-selected text { fill: #b9e2ff; }
+.map-panel .map-label-emergency > rect { stroke: #ff939d; fill: #2b1b24; }
+.map-panel .map-label-emergency text { fill: #ffafb7; }
+.map-panel .map-label:hover > rect, .map-panel .map-label:focus-visible > rect { fill: #202c39; stroke: #8ccfff; stroke-width: 1.3; }
+.map-panel .map-airport { color: #a1e1ba; }
+.map-panel .map-airport-limited { color: #f2c079; }
+.map-panel .map-airport-closed { color: #ff939d; }
+.map-airport-glyph { pointer-events: none; }
+.map-airport-ring { fill: #10151b; stroke: currentColor; stroke-width: 1; opacity: .75; }
+.map-airport-core { fill: currentColor; fill-opacity: .12; stroke: currentColor; stroke-width: 1.2; }
+.map-airport-detail { fill: none; stroke: currentColor; stroke-width: 1.1; stroke-linecap: round; }
+.map-panel .map-airport.map-selected .map-airport-ring, .map-panel .map-airport.map-connected .map-airport-ring { stroke: #8ccfff; stroke-width: 2; opacity: 1; }
+.map-panel .map-flight > path { fill: #b6dcef; stroke: #0c1015; stroke-width: 1; stroke-linejoin: round; }
+.map-panel .map-flight.map-selected > path { fill: #8ccfff; stroke: #e4f4ff; stroke-width: 1.2; }
+.map-panel .map-flight.map-emergency > path { fill: #ff939d; }
+.map-panel .map-flight.map-landed > path { fill: #74808f; }
+.map-panel .map-hit { transition: fill 160ms ease, stroke 160ms ease; }
+.map-panel .map-flight:hover .map-hit, .map-panel .map-airport:hover .map-hit { fill: #8ccfff12; }
+.map-panel .map-flight:focus-visible .map-hit, .map-panel .map-airport:focus-visible .map-hit { stroke: #8ccfff; stroke-width: .65; }
+.map-panel .map-assignment { stroke: #bad8e9; opacity: .32; stroke-width: 1; stroke-dasharray: .4 5; }
+.map-panel .map-assignment-selected { stroke: #b7e3ff; opacity: .9; stroke-width: 1.4; }
+.map-panel .map-proposal { stroke: #f2c079; opacity: .65; }
+.map-panel .map-legend { padding: 14px 20px; gap: 12px 20px; color: #9fa9b7; border-top-color: #ffffff0f; }
+.map-legend svg { flex: none; overflow: visible; }
+@media (prefers-reduced-motion: reduce) { .map-panel .map-hit, .map-panel .map-label > rect { transition: none; } }
+@media (max-width: 767px) { .map-panel .map-caption, .map-panel .map-legend { padding: 12px 14px; } .map-panel .map-caption > span { text-align: left; } }

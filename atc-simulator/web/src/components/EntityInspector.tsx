@@ -1,6 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { PublicSnapshot } from "@ghost-tower/domain/public";
 import "./display.css";
+import { Communications } from "./Communications";
+import "./communications.css";
 const clock = (sec: number) =>
   `${Math.floor(Math.max(0, sec) / 60)
     .toString()
@@ -16,6 +18,8 @@ export function EntityInspector({
   selectedId: string | null;
   children?: ReactNode;
 }) {
+  const [tab, setTab] = useState("Communications");
+  useEffect(() => setTab("Communications"), [selectedId]);
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
     const start = Date.now();
@@ -26,9 +30,6 @@ export function EntityInspector({
   const wallNow = snapshot.serverWallTimeMs + elapsed;
   const airport = snapshot.airports.find((a) => a.entityId === selectedId);
   const flight = snapshot.flights.find((f) => f.entityId === selectedId);
-  const events = snapshot.timeline
-    .filter((e) => e.fromEntityId === selectedId || e.toEntityId === selectedId)
-    .slice(-12);
   if (!airport && !flight)
     return (
       <aside className="inspector-panel">
@@ -48,6 +49,19 @@ export function EntityInspector({
         <h2>{airport?.airportId ?? flight?.callsign}</h2>
         <p>{airport?.name ?? flight?.flightId}</p>
       </header>
+      <div className="comm-tabs" role="tablist" aria-label="Entity details">
+        {["Communications", "State", "Controls"].map((name, index, tabs) => (
+          <button key={name} id={`entity-tab-${name}`} role="tab" aria-selected={tab === name}
+            aria-controls={`entity-panel-${name}`} tabIndex={tab === name ? 0 : -1}
+            onClick={() => setTab(name)} onKeyDown={(event) => {
+              const next = event.key === "ArrowRight" ? tabs[(index + 1) % tabs.length] : event.key === "ArrowLeft" ? tabs[(index + tabs.length - 1) % tabs.length] : event.key === "Home" ? tabs[0] : event.key === "End" ? tabs[tabs.length - 1] : undefined;
+              if (next) { event.preventDefault(); setTab(next); document.getElementById(`entity-tab-${next}`)?.focus(); }
+            }}>{name}</button>
+        ))}
+      </div>
+      <section role="tabpanel" id={`entity-panel-${tab}`} aria-labelledby={`entity-tab-${tab}`} className="comm-panel">
+      {tab === "Communications" && <Communications key={selectedId} snapshot={snapshot} selectedId={selectedId!} />}
+      {tab === "State" && <>
       {airport && (
         <>
           <div className="inspector-status">{airport.status}</div>
@@ -187,31 +201,8 @@ export function EntityInspector({
           )}
         </>
       )}
-      {children}
-      <section className="inspector-transcript">
-        <h3>Entity transcript</h3>
-        {events.length ? (
-          <ol>
-            {events.map((e) => (
-              <li key={e.eventId}>
-                <div>
-                  <time>{clock(e.simTimeSec)}</time>
-                  <span>
-                    {e.source === "RULES_FALLBACK"
-                      ? "Rules fallback"
-                      : e.source.toLowerCase()}{" "}
-                    · {e.status.toLowerCase()}
-                  </span>
-                </div>
-                <p>{e.summary}</p>
-              </li>
-            ))}
-          </ol>
-        ) : (
-          <p className="inspector-muted">
-            No activity recorded for this entity.
-          </p>
-        )}
+      </>}
+      {tab === "Controls" && (children ?? <p className="inspector-muted">No controls available for this entity.</p>)}
       </section>
     </aside>
   );
