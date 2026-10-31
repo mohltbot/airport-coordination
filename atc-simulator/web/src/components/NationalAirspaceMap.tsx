@@ -60,7 +60,7 @@ export function NationalAirspaceMap({ snapshot, selectedId, onSelect, stale }: P
   const fit = () => { setZoom(1); setViewCenter(null); setRegionName("network"); };
   const region = (name: string) => {
     if (name === "network") { fit(); return; }
-    const target = name === "bay" ? { lon: -122.15, lat: 37.55, zoom: 12 } : name === "northeast" ? { lon: -74, lat: 40.3, zoom: 4 } : { lon: -115, lat: 34, zoom: 3 };
+    const target = name === "bay" ? { lon: -122.0, lat: 37.2, zoom: 7 } : name === "northeast" ? { lon: -74, lat: 40.3, zoom: 4 } : { lon: -115, lat: 34, zoom: 3 };
     setRegionName(name); setViewCenter(projectUs(target.lon, target.lat)); setZoom(target.zoom);
   };
   const select = (id: string) => { if (!suppressClick.current) onSelect(id); };

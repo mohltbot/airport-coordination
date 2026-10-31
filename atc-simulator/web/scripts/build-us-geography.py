@@ -30,7 +30,7 @@ for geo in topology['objects']['states']['geometries']:
     if geo['id'] in ['02','15'] or int(geo['id']) > 56: continue
     polygons = [geo['arcs']] if geo['type'] == 'Polygon' else geo['arcs']
     states.append({'name':geo['properties']['name'], 'path':''.join(ring_path(ring) for polygon in polygons for ring in polygon)})
-ids = ['ATL','DFW','DEN','ORD','LAX','JFK','CLT','LAS','MCO','MIA','SFO','OAK','SJC']
+ids = ['ATL','DFW','DEN','ORD','LAX','JFK','CLT','LAS','MCO','MIA','SFO','OAK','SJC','MRY']
 rows = {r['iata_code']:r for r in csv.DictReader(open(sys.argv[2])) if r['iata_code'] in ids and r['iso_country']=='US'}
 airports = []
 for rank,code in enumerate(ids,1):

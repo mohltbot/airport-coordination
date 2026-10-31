@@ -2,10 +2,10 @@ import { test, expect } from '@playwright/test';
 import { bootstrap, harness } from './harness';
 import { usPreviewSnapshot } from '../../web/src/dev/us-preview';
 
-test('US map shows thirteen real towers and opens airport communications', async ({ page }) => {
+test('US map shows fourteen real towers and opens airport communications', async ({ page }) => {
   const h = await harness(page, bootstrap(structuredClone(usPreviewSnapshot), 'VIEWER'));
   await h.open('/');
-  await expect(page.locator('.national-airport')).toHaveCount(13);
+  await expect(page.locator('.national-airport')).toHaveCount(14);
   await expect(page.locator('.national-states path')).toHaveCount(49);
   await expect(page.locator('.national-assignment[data-flight-id]')).toHaveCount(usPreviewSnapshot.flights.filter(f => f.activeAssignment && !['LANDED','UNRESOLVED'].includes(f.phase)).length);
   const atl = page.locator('.national-airport').filter({ has: page.locator('title', { hasText: 'Hartsfield' }) });
@@ -21,7 +21,7 @@ test('Bay Area preset preserves view across snapshots and has honest regional co
   const h=await harness(page,bootstrap(snapshot,'VIEWER')); await h.open('/');
   await page.getByLabel('Map region').selectOption('bay');
   await expect(page.getByText('No active towers in this view.',{exact:true})).toHaveCount(0);
-  for (const code of ['SFO','OAK','SJC']) await expect(page.locator('.national-label').filter({hasText:code})).toBeVisible();
+  for (const code of ['SFO','OAK','SJC','MRY']) await expect(page.locator('.national-label').filter({hasText:code})).toBeVisible();
   await expect(page.locator('.national-context-cities')).toContainText('San Francisco');
   const view=await page.locator('.national-map-svg').getAttribute('viewBox');
   const next=structuredClone(snapshot); next.projectionVersion++;

@@ -17,7 +17,7 @@ export const DEFAULT_SPEED = 10
 // World
 export const MAP_WIDTH_NM = 240
 export const MAP_HEIGHT_NM = 160
-export const AIRPORT_IDS = ["ALP", "BRV", "CHR", "ATL", "DFW", "DEN", "ORD", "LAX", "JFK", "CLT", "LAS", "MCO", "MIA", "SFO", "OAK", "SJC"] as const
+export const AIRPORT_IDS = ["ALP", "BRV", "CHR", "ATL", "DFW", "DEN", "ORD", "LAX", "JFK", "CLT", "LAS", "MCO", "MIA", "SFO", "OAK", "SJC", "MRY"] as const
 export const RUNWAY_IDS = ["R1", "R2"] as const
 export const AIRPORTS = [
     { airportId: "ALP", name: "Alpha", position: { x: 50, y: 50 } },
@@ -180,6 +180,18 @@ export const US_AIRPORTS = [
         "position": {
             "x": 23.2085,
             "y": 75.7646
+        }
+    },
+    {
+        "airportId": "MRY",
+        "name": "Monterey Regional Airport",
+        "city": "Monterey",
+        "latitude": 36.586777,
+        "longitude": -121.844183,
+        "rank": null,
+        "position": {
+            "x": 23.5187,
+            "y": 79.3715
         }
     }
 ] as const
