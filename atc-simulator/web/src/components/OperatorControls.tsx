@@ -60,11 +60,11 @@ export function RunSetup() {
   return (
     <section className="run-setup" aria-labelledby={`${id}-title`}>
       <h2 id={`${id}-title`}>Set the airspace</h2>
-      <p className="muted">{network === "US" ? "Ten real airports. One shared sky." : "Three towers. Your choice of traffic."}</p>
+      <p className="muted">{network === "US" ? "Thirteen real airports. One shared sky." : "Three towers. Your choice of traffic."}</p>
       <fieldset disabled={!operator || locked}>
         <label htmlFor={`${id}-network`}>Airport network</label>
         <select id={`${id}-network`} value={network} onChange={(event) => setNetwork(event.target.value as "US" | "LEGACY")}>
-          <option value="US">United States · 10 busiest airports</option>
+          <option value="US">United States · Top 10 + Bay Area</option>
           <option value="LEGACY">Legacy · 3 airport test network</option>
         </select>
         <label className="continuous-setting"><input type="checkbox" checked={continuous} onChange={(event) => setContinuous(event.target.checked)} /> Keep traffic flowing</label>
@@ -114,7 +114,7 @@ export function RunSetup() {
       </fieldset>
       <p className="setup-summary">
         <strong>{valid ? flightCount : "—"} flights</strong>
-        <span>{network === "US" ? 10 : 3} ATC agents</span>
+        <span>{network === "US" ? 13 : 3} ATC agents</span>
       </p>
       {!valid && (
         <p className="error-text">
