@@ -62,7 +62,7 @@ export function NationalAirspaceMap({ snapshot, selectedId, onSelect, stale }: P
   const fit = () => { setZoom(1); setViewCenter(null); setRegionName("network"); };
   const region = (name: string) => {
     if (name === "network") { fit(); return; }
-    const target = name === "bay" ? { lon: -122.0, lat: 37.2, zoom: 7 } : name === "northeast" ? { lon: -74, lat: 40.3, zoom: 4 } : { lon: -115, lat: 34, zoom: 3 };
+    const target = name === "bay" ? { lon: -122.0, lat: 37.2, zoom: 7 } : name === "northeast" ? { lon: -74.0, lat: 40.7, zoom: 14 } : { lon: -115, lat: 34, zoom: 3 };
     setRegionName(name); setViewCenter(projectUs(target.lon, target.lat)); setZoom(target.zoom);
   };
   const select = (id: string) => { if (!suppressClick.current) onSelect(id); };
@@ -87,7 +87,7 @@ export function NationalAirspaceMap({ snapshot, selectedId, onSelect, stale }: P
     if (place) labels.push({ ...entry, ...place, width: w, height: h });
   }
   return <section className="map-panel national-map" aria-label="United States airspace map">
-    <div className="national-map-heading"><div><h2>National network</h2><p>{stale ? "Position updates stopped" : "Contiguous United States"} <span>· Compressed simulation scale</span></p></div><div className="national-map-tools"><label className="national-region"><span className="national-sr-only">Map region</span><select aria-label="Map region" value={regionName} onChange={e => region(e.target.value)}><option value="custom" disabled>Custom view</option><option value="network">US network</option><option value="bay">Bay Area</option><option value="northeast">Northeast</option><option value="southwest">Southwest</option></select></label><div className="national-map-zoom" role="group" aria-label="Map zoom"><button aria-label="Zoom out" disabled={zoom <= 1} onClick={() => changeZoom(-Math.max(.5,zoom*.35))}>−</button><button onClick={fit} aria-label="Reset map view">Fit</button><button aria-label="Zoom in" disabled={zoom >= 20} onClick={() => changeZoom(Math.max(.5,zoom*.5))}>+</button></div></div></div>
+    <div className="national-map-heading"><div><h2>National network</h2><p>{stale ? "Position updates stopped" : "Contiguous United States"} <span>· Compressed simulation scale</span></p></div><div className="national-map-tools"><label className="national-region"><span className="national-sr-only">Map region</span><select aria-label="Map region" value={regionName} onChange={e => region(e.target.value)}><option value="custom" disabled>Custom view</option><option value="network">US network</option><option value="bay">Bay Area</option><option value="northeast">New York · Northeast</option><option value="southwest">Southwest</option></select></label><div className="national-map-zoom" role="group" aria-label="Map zoom"><button aria-label="Zoom out" disabled={zoom <= 1} onClick={() => changeZoom(-Math.max(.5,zoom*.35))}>−</button><button onClick={fit} aria-label="Reset map view">Fit</button><button aria-label="Zoom in" disabled={zoom >= 20} onClick={() => changeZoom(Math.max(.5,zoom*.5))}>+</button></div></div></div>
     <svg ref={svgRef} className="national-map-svg" tabIndex={0}
       onKeyDown={e => {
         if (e.target !== e.currentTarget) return;
