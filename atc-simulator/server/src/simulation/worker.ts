@@ -436,6 +436,47 @@ export function workerHealth(status: WorkerStatus): DependencyHealth {
     }
 }
 
+// ------------------------------------------------------------ Relay health
+
+/**
+ * Truthful Relay status from the last 60 s of real traffic: outbox send results and delivered
+ * hop latency (envelope creation to actor receipt). READY only while sends succeed and hops are
+ * short; hosted Relay answered 503 database_overloaded / 429 workspace_busy for minutes at a time.
+ */
+export function relayHealthTracker(now: () => number = Date.now) {
+    const WINDOW_MS = 60_000
+    const sends: Array<{ at: number; ok: boolean; code: string | null }> = []
+    const hops: Array<{ at: number; ms: number }> = []
+    const trim = () => {
+        const cut = now() - WINDOW_MS
+        while (sends.length && sends[0]!.at < cut) sends.shift()
+        while (hops.length && hops[0]!.at < cut) hops.shift()
+    }
+    return {
+        send(ok: boolean, code: string | null) {
+            sends.push({ at: now(), ok, code })
+            trim()
+        },
+        hop(ms: number) {
+            hops.push({ at: now(), ms })
+            trim()
+        },
+        health(): DependencyHealth {
+            trim()
+            const failed = sends.filter(s => !s.ok)
+            const sorted = hops.map(h => h.ms).sort((a, b) => a - b)
+            const p50 = sorted.length ? sorted[Math.floor(sorted.length / 2)]! : null
+            const hop = p50 === null ? "no deliveries" : `p50 hop ${Math.round(p50 / 1000)} s`
+            const codes = [...new Set(failed.map(f => f.code).filter(Boolean))].slice(0, 2).join(", ")
+            if (sends.length >= 5 && failed.length === sends.length)
+                return { status: "UNAVAILABLE", detail: `hosted Relay failing: all ${sends.length} sends in last 60 s failed${codes ? ` (${codes})` : ""}` }
+            if (failed.length >= 3 || (p50 !== null && p50 > 15_000))
+                return { status: "DEGRADED", detail: `hosted Relay overloaded: ${failed.length} send failures in last 60 s${codes ? ` (${codes})` : ""}, ${hop}` }
+            return { status: "READY", detail: p50 === null ? null : hop }
+        },
+    }
+}
+
 // ------------------------------------------------------------ process entry
 
 // `bun server/src/simulation/worker.ts` (from atc-simulator/). Wires the real
@@ -446,6 +487,7 @@ const load = (rel: string): Promise<Record<string, unknown>> => import(new URL(r
 async function main() {
     const env = process.env
     const log = (line: string) => console.log(`${new Date().toISOString()} ${line}`)
+    const relayStats = relayHealthTracker()
 
     const { loadWorkerRepository } = await import("./repository.ts")
     const repo = await loadWorkerRepository(env)
@@ -472,6 +514,7 @@ async function main() {
                 timing,
                 // Failures only, plus slow sends: the success path would flood the log.
                 log: (e: { outcome: string; type: string; entityId: string; attempt: number; code: string | null; sendMs: number }) => {
+                    if (e.outcome === "SENT" || e.outcome === "FAILED") relayStats.send(e.outcome === "SENT", e.code)
                     if (e.outcome !== "SENT" || e.sendMs > 5_000) log(`relay send ${e.outcome} ${e.type} from ${e.entityId} attempt ${e.attempt} ${e.code ?? ""} ${e.sendMs}ms`)
                 },
                 outbox: {
@@ -494,8 +537,10 @@ async function main() {
     let publish: WorkerDeps["publish"]
     try {
         const projection: Record<string, unknown> = await load("../projection.ts")
-        const make = projection.createWorkerPublisher as ((deps: { repo: WorkerRepository; env: typeof env }) => WorkerDeps["publish"]) | undefined
-        if (make) publish = make({ repo, env })
+        const make = projection.createWorkerPublisher as
+            | ((deps: { repo: WorkerRepository; env: typeof env; relayHealth?: () => DependencyHealth }) => WorkerDeps["publish"])
+            | undefined
+        if (make) publish = make({ repo, env, relayHealth: transport ? () => relayStats.health() : undefined })
     } catch (err) {
         log(`projection publisher unavailable: ${errText(err)}`)
     }
@@ -515,6 +560,7 @@ async function main() {
         log,
         // Delivered messages: latency from envelope creation, and anything not applied cleanly.
         onRoute: e => {
+            if (e.outcome !== "SKIPPED") relayStats.hop(e.latencyMs)
             if (e.outcome === "SKIPPED" || e.detail || e.latencyMs > 15_000 || !e.ackSent)
                 log(`relay recv ${e.type} ${e.from}->${e.to} ${e.outcome}/${e.code} ${e.latencyMs}ms ack=${e.ackSent}${e.detail ? ` ${e.detail}` : ""}`)
         },
