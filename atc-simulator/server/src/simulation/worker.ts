@@ -105,6 +105,7 @@ export class SimulationWorker {
     private stopped = false
     private status: WorkerStatus = { state: "STARTING", detail: null, lease: null, simNowSec: 0 }
     private stopLease: (() => void) | null = null
+    private setupEpoch: number | null = null
     private supervisor: Promise<void> | null = null
     private readonly now: () => number
 
@@ -153,6 +154,7 @@ export class SimulationWorker {
             try {
                 await this.runLease(lease)
             } catch (err) {
+                this.setupEpoch = null
                 this.log(`lease ${lease.epoch} ended: ${errText(err)}`)
                 await sleep(500)
             }
@@ -177,6 +179,23 @@ export class SimulationWorker {
         const runId = lease.runId
         this.setStatus({ state: "RECOVERING", detail: `epoch ${lease.epoch}: resuming run ${runId.slice(0, 8)}`, lease })
         this.log(`claimed run ${runId} epoch ${lease.epoch}`)
+
+        // Keep the lease alive during setup: hosted Relay registration of 3+N identities took
+        // 55 s on first connect, past the 10 s lease, so the run never reached its first tick.
+        // The supervisor clears setupEpoch when this lease ends, so the loop cannot outlive it.
+        this.setupEpoch = lease.epoch
+        void (async () => {
+            while (this.setupEpoch === initial.epoch && !this.stopped) {
+                await sleep(WORKER_RENEW_MS)
+                if (this.setupEpoch !== initial.epoch) return
+                try {
+                    lease = await repo.simulation.renewWorker(lease)
+                } catch (err) {
+                    this.log(`setup lease renewal failed: ${errText(err)}`)
+                    return
+                }
+            }
+        })()
 
         const entityIds = await repo.entities(runId)
         const airportIds = entityIds.flatMap(e => (e.startsWith("airport:") ? [e.slice(8) as AirportId] : []))
@@ -255,6 +274,7 @@ export class SimulationWorker {
         }
         if (repo.runSpeed) await configure(await repo.runSpeed(runId))
 
+        this.setupEpoch = null
         await new Promise<void>(resolve => {
             const timers: ReturnType<typeof setInterval>[] = []
             let ended = false
