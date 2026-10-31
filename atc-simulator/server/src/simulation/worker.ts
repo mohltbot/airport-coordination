@@ -50,7 +50,7 @@ export interface EntityWorkApi {
     configureNegotiation?(context: MutationContext, options: NegotiationSettings): Promise<DomainResult>
 }
 
-export type NegotiationSettings = { profile: "HOSTED" | "LOCAL"; speed: 1 | 5 | 10; decisionMode: "IMMEDIATE" | "JOB" }
+export type NegotiationSettings = { profile: "HOSTED" | "LOCAL" | "LIVE_LOCAL"; speed: 1 | 5 | 10; decisionMode: "IMMEDIATE" | "JOB" }
 
 export type OutboxAttempt = { messageId: string; transportMessageId: string | null; attemptCount: number; nextAttemptAtWallMs: number }
 
@@ -72,7 +72,14 @@ export interface WorkerRepository extends SimulationRepository {
     }
 }
 
-export type WorkerStatus = { state: "STARTING" | "WAITING_FOR_LEASE" | "RECOVERING" | "RUNNING" | "STOPPED"; detail: string | null; lease: WorkerLease | null; simNowSec: number }
+export type WorkerStatus = {
+    state: "STARTING" | "WAITING_FOR_LEASE" | "RECOVERING" | "RUNNING" | "STOPPED"
+    detail: string | null
+    lease: WorkerLease | null
+    simNowSec: number
+    /** Decision mode every entity of the leased run accepted; null until configureNegotiation applied everywhere. */
+    decisionMode?: "IMMEDIATE" | "JOB" | null
+}
 
 export type WorkerDeps = {
     repo: WorkerRepository
@@ -179,7 +186,7 @@ export class SimulationWorker {
         const { repo } = this.deps
         let lease = initial
         const runId = lease.runId
-        this.setStatus({ state: "RECOVERING", detail: `epoch ${lease.epoch}: resuming run ${runId.slice(0, 8)}`, lease })
+        this.setStatus({ state: "RECOVERING", detail: `epoch ${lease.epoch}: resuming run ${runId.slice(0, 8)}`, lease, decisionMode: null })
         this.log(`claimed run ${runId} epoch ${lease.epoch}`)
 
         // Keep the lease alive during setup: hosted Relay registration of 3+N identities took
@@ -272,8 +279,17 @@ export class SimulationWorker {
             const negotiation = this.deps.negotiation
             if (!negotiation || speed === configuredSpeed || (speed !== 1 && speed !== 5 && speed !== 10)) return
             const ctx = this.context(lease, `configure:${lease.epoch}:${speed}`)
-            await Promise.all(agentIds.map(id => entityApi(repo, runId, id).configureNegotiation?.(ctx, { ...negotiation, speed })))
+            const results = await Promise.all(agentIds.map(id => entityApi(repo, runId, id).configureNegotiation?.(ctx, { ...negotiation, speed })))
+            // A worker that claims a run before Start initializes it gets REJECTED here; mark the
+            // run configured only when every entity applied, or actors keep the HOSTED default
+            // timing (450 s slot lead) and IMMEDIATE (rules) decisions for the whole run.
+            const rejected = results.filter(r => r && r.outcome === "REJECTED").length
+            if (rejected > 0) {
+                this.log(`negotiation configure incomplete: ${rejected}/${agentIds.length} entities not ready; retrying`)
+                return
+            }
             configuredSpeed = speed
+            this.setStatus({ decisionMode: negotiation.decisionMode })
             this.log(`negotiation configured: ${negotiation.profile} ${negotiation.decisionMode} speed ${speed}`)
         }
         if (repo.runSpeed) await configure(await repo.runSpeed(runId))
@@ -327,6 +343,7 @@ export class SimulationWorker {
                                 }
                             }
                         }
+                        if (configuredSpeed === null && repo.runSpeed) await configure(await repo.runSpeed(runId))
                         const outcome = await runTick(repo, lease)
                         if (ended) return
                         if (outcome) {
@@ -488,7 +505,11 @@ async function main() {
     const env = process.env
     const log = (line: string) => console.log(`${new Date().toISOString()} ${line}`)
     // LOCAL for Agent Relay's local engine (spec timings), HOSTED for cast.agentrelay.com.
-    const relayProfile = (env.RELAY_TRANSPORT_PROFILE ?? env.RELAY_PROFILE)?.trim().toUpperCase() === "LOCAL" ? ("LOCAL" as const) : ("HOSTED" as const)
+    const requestedProfile = (env.RELAY_TRANSPORT_PROFILE ?? env.RELAY_PROFILE)?.trim().toUpperCase()
+    const agentModeLive = env.AGENT_MODE?.trim().toLowerCase() === "live"
+    // LOCAL with model decisions needs the wider LIVE_LOCAL windows (a model call takes 2 to 6 s).
+    const relayProfile: "HOSTED" | "LOCAL" | "LIVE_LOCAL" =
+        requestedProfile === "LIVE_LOCAL" || (requestedProfile === "LOCAL" && agentModeLive) ? "LIVE_LOCAL" : requestedProfile === "LOCAL" ? "LOCAL" : "HOSTED"
     const relayBase = env.RELAY_BASE_URL || env.RELAY_BASE || ""
     const relayLabel = env.RELAY_LABEL?.trim() || (/\/\/(127\.0\.0\.1|localhost|\[::1\])[:/]/.test(relayBase) ? "Agent Relay (local engine)" : "hosted Relay")
     const relayStats = relayHealthTracker(relayLabel)

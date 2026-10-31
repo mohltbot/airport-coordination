@@ -278,7 +278,7 @@ export const VITE_PORT = 5173
 // Timing profiles keyed by transport. LOCAL (fake/in-process transport) keeps the spec values.
 // HOSTED (real hosted Relay, used by live and rules agents) absorbs 2.5 to 4 s per send and
 // 3 to 7 s until an event is readable. Agreed with the UI teammate 2026-10-31.
-export type TransportProfile = "HOSTED" | "LOCAL"
+export type TransportProfile = "HOSTED" | "LOCAL" | "LIVE_LOCAL"
 export type RelayTiming = {
     replyCollectionWindowMs: number
     offerAcceptTimeoutMs: number
@@ -300,6 +300,19 @@ export const RELAY_TIMING: { readonly [K in TransportProfile]: RelayTiming } = {
         defaultSpeed: DEFAULT_SPEED,
         // 6 s × 10× = 60 sim s, the spec's slot lead at the default speed.
         expectedBookingWallSec: 6,
+    },
+    // Local engine with model decisions: hops take 0.5 s but an ATC or pilot model call takes
+    // 2 to 6 s (four at a time), so the spec's 4 s window would expire before the offer.
+    LIVE_LOCAL: {
+        replyCollectionWindowMs: 15_000,
+        offerAcceptTimeoutMs: 20_000,
+        offerTtlMs: 30_000,
+        ackRetryBackoffMs: OUTBOX_RETRY_SCHEDULE_MS,
+        ackRetrySteadyMs: OUTBOX_RETRY_STEADY_MS,
+        commandDelayedAfterMs: COMMAND_DELAYED_AFTER_MS,
+        defaultSpeed: DEFAULT_SPEED,
+        // Two model decisions per booking: 20 s × 5× = 100 sim s of slot lead.
+        expectedBookingWallSec: 20,
     },
     HOSTED: {
         // Raised 2026-10-31 from 30/30/90 s: at 10 flights hosted hops measured 5 to 70 s, so

@@ -50,7 +50,7 @@ describe("flight-motion steps", () => {
         expect(ok.state!.outbox.map(e => e.envelope.type)).toEqual(["CLEARANCE_REQUEST"])
     })
 
-    test("CLEARANCE_GRANTED is recorded once; a DOMAIN_ACK removes the acknowledged outbox entry", () => {
+    test("CLEARANCE_GRANTED is recorded once; a DOMAIN_ACK marks the outbox entry acknowledged and keeps it for the timeline", () => {
         const s1 = advanceFlightStep({}, near(), ctx(92), tick(0, 92)).state!
         const req = s1.outbox[0]!.envelope
         const granted = {
@@ -75,7 +75,8 @@ describe("flight-motion steps", () => {
         expect(receiveFlightStep({}, s2, ctx(91), granted).result.outcome).toBe("DUPLICATE")
         const ack = { ...granted, messageId: crypto.randomUUID(), type: "DOMAIN_ACK" as const, payload: { processedMessageId: req.messageId, resultCode: "OK" } }
         const s3 = receiveFlightStep({}, s2, ctx(92), ack).state!
-        expect(s3.outbox).toHaveLength(0)
+        expect(s3.outbox.filter(e => !e.acknowledged)).toHaveLength(0)
+        expect(s3.outbox.find(e => e.envelope.messageId === req.messageId)?.acknowledged).toBe(true)
     })
 
     test("an old worker epoch is fenced out of every step", () => {
