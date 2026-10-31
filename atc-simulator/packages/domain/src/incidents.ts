@@ -60,6 +60,19 @@ export type IncidentContext = Pick<MutationContext, "runId" | "simNowSec" | "wal
     causationId?: string | null
     /** Extra flights to send AIRPORT_STATUS to (for example the whole roster). */
     notifyFlightIds?: readonly string[]
+    /** Airport hook: negotiation.revokeArrangements bound to a NegotiationContext,
+     *  so revoked holds answer their pending request with LANDING_REFUSED and
+     *  their ATC jobs are cancelled. Without it a built-in revocation is used. */
+    revokeArrangements?: (
+        airport: AirportState,
+        affects: (runwayId: string) => boolean,
+        code: DomainCode,
+        reason: string,
+        causationId: string | null,
+    ) => { airport: AirportState; out: ProtocolEnvelope[] }
+    /** Flight hook: open an urgent round (negotiation.openRound(f, "EMERGENCY", ctx).state)
+     *  when an incident makes the flight an emergency or tightens its deadline. */
+    openEmergencyRound?: (flight: FlightState) => FlightState
 }
 
 export type IncidentEvent =
@@ -285,6 +298,42 @@ export function deriveFlightConditions(state: Pick<FlightState, "incidents" | "f
 
 type AirportRecompute = { state: AirportState; events: IncidentEvent[] }
 
+/** Built-in revocation, used when no revokeArrangements hook is supplied:
+ *  offers become REVOKED, reservations REVOKED with a RESERVATION_REVOKED
+ *  notice, clearances REVOKED. Occupied or completed runway time is untouched. */
+function defaultRevoke(airport: AirportState, affects: (runwayId: string) => boolean, code: DomainCode, reason: string, causationId: string | null, wallNowMs: number) {
+    let offers = airport.offers
+    let reservations = airport.reservations
+    let clearances = airport.clearances
+    const out: ProtocolEnvelope[] = []
+    for (const o of Object.values(airport.offers)) {
+        if (o.status !== "OFFERED" || !affects(o.runwayId)) continue
+        offers = { ...offers, [o.offerId]: { ...o, status: "REVOKED" } }
+    }
+    for (const r of Object.values(airport.reservations)) {
+        if ((r.status !== "CONFIRMED" && r.status !== "CLEARED") || !affects(r.runwayId)) continue
+        reservations = { ...reservations, [r.reservationId]: { ...r, status: "REVOKED" } }
+        out.push({
+            schemaVersion: 1,
+            messageId: stableUuid(airport.runId, airport.entityId, "RESERVATION_REVOKED", r.reservationId, airport.operationalRevision),
+            runId: airport.runId,
+            fromEntityId: airport.entityId,
+            toEntityId: flightEntityId(r.flightId),
+            correlationId: r.reservationId,
+            causationId,
+            createdAtWallMs: wallNowMs,
+            expiresAtWallMs: null,
+            type: "RESERVATION_REVOKED",
+            payload: { reservationId: r.reservationId, code, reason: reason.slice(0, 240), airportOperationalRevision: airport.operationalRevision },
+        })
+    }
+    for (const c of Object.values(airport.clearances)) {
+        if (c.status !== "ACTIVE" || !affects(c.runwayId)) continue
+        clearances = { ...clearances, [c.clearanceId]: { ...c, status: "REVOKED" } }
+    }
+    return { airport: { ...airport, offers, reservations, clearances }, out }
+}
+
 /** Recompute restrictions after an incident change, revoke every non-terminal
  *  arrangement on a runway that is no longer open, and queue notices. */
 function recomputeAirport(prev: AirportState, incidents: AirportState["incidents"], ctx: IncidentContext): AirportRecompute {
@@ -300,77 +349,41 @@ function recomputeAirport(prev: AirportState, incidents: AirportState["incidents
     for (const o of Object.values(prev.offers)) if (o.status === "OFFERED" || o.status === "REVOKED") notify.add(o.flightId)
     for (const r of Object.values(prev.reservations)) if (r.status === "CONFIRMED" || r.status === "CLEARED" || r.status === "REVOKED") notify.add(r.flightId)
 
-    let offers = prev.offers
-    let reservations = prev.reservations
-    let clearances = prev.clearances
-    const revokedReservations: Array<{ reservationId: string; flightId: string }> = []
-
-    for (const o of Object.values(prev.offers)) {
-        if (o.status !== "OFFERED" || open.has(o.runwayId)) continue
-        offers = { ...offers, [o.offerId]: { ...o, status: "REVOKED" } }
-        events.push({ type: "ARRANGEMENT_REVOKED", airportId, flightId: o.flightId, arrangement: "OFFER", id: o.offerId, summary: `${airportId} withdrew offer ${o.offerId} to ${o.flightId}: runway ${o.runwayId} unavailable` })
-    }
-    for (const r of Object.values(prev.reservations)) {
-        if ((r.status !== "CONFIRMED" && r.status !== "CLEARED") || open.has(r.runwayId)) continue
-        reservations = { ...reservations, [r.reservationId]: { ...r, status: "REVOKED" } }
-        revokedReservations.push({ reservationId: r.reservationId, flightId: r.flightId })
-        events.push({ type: "ARRANGEMENT_REVOKED", airportId, flightId: r.flightId, arrangement: "RESERVATION", id: r.reservationId, summary: `${airportId} revoked reservation ${r.reservationId} for ${r.flightId}: runway ${r.runwayId} unavailable` })
-    }
-    for (const c of Object.values(prev.clearances)) {
-        if (c.status !== "ACTIVE" || open.has(c.runwayId)) continue
-        clearances = { ...clearances, [c.clearanceId]: { ...c, status: "REVOKED" } }
-        events.push({ type: "ARRANGEMENT_REVOKED", airportId, flightId: c.flightId, arrangement: "CLEARANCE", id: c.clearanceId, summary: `${airportId} revoked clearance ${c.clearanceId} for ${c.flightId}` })
-    }
-
-    const restrictionsChanged = !sameRestrictions(prev.restrictions, conditions.restrictions)
-    const revokedAny = events.length > 0
     const statusRevision = prev.statusRevision + 1
-    const operationalRevision = restrictionsChanged || revokedAny ? prev.operationalRevision + 1 : prev.operationalRevision
-
-    const notices: OutboxEntry[] = []
-    for (const flightId of [...notify].sort()) {
-        notices.push(
-            outboxEntry(
-                {
-                    schemaVersion: 1,
-                    messageId: stableUuid(prev.runId, prev.entityId, "AIRPORT_STATUS", statusRevision, flightId),
-                    runId: prev.runId,
-                    fromEntityId: prev.entityId,
-                    toEntityId: flightEntityId(flightId),
-                    correlationId: `${airportId}-status-${statusRevision}`,
-                    causationId,
-                    createdAtWallMs: ctx.wallNowMs,
-                    expiresAtWallMs: null,
-                    type: "AIRPORT_STATUS",
-                    payload: { airportId, statusRevision, restrictions: conditions.restrictions },
-                },
-                ctx.wallNowMs,
-            ),
-        )
-    }
+    const operationalRevision = prev.operationalRevision + 1
     const reason = conditions.statusReason ?? "Airport restriction"
-    for (const { reservationId, flightId } of revokedReservations) {
-        notices.push(
-            outboxEntry(
-                {
-                    schemaVersion: 1,
-                    messageId: stableUuid(prev.runId, prev.entityId, "RESERVATION_REVOKED", reservationId, operationalRevision),
-                    runId: prev.runId,
-                    fromEntityId: prev.entityId,
-                    toEntityId: flightEntityId(flightId),
-                    correlationId: reservationId,
-                    causationId,
-                    createdAtWallMs: ctx.wallNowMs,
-                    expiresAtWallMs: null,
-                    type: "RESERVATION_REVOKED",
-                    payload: { reservationId, code: "CLOSED", reason: reason.slice(0, 240), airportOperationalRevision: operationalRevision },
-                },
-                ctx.wallNowMs,
-            ),
-        )
-    }
+    const affects = (runwayId: string) => !open.has(runwayId)
+    const staged: AirportState = { ...prev, incidents, restrictions: conditions.restrictions, statusRevision, operationalRevision }
+    const revoked = ctx.revokeArrangements
+        ? ctx.revokeArrangements(staged, affects, "CLOSED", reason, causationId)
+        : defaultRevoke(staged, affects, "CLOSED", reason, causationId, ctx.wallNowMs)
+    const after = revoked.airport
 
-    if (restrictionsChanged) {
+    for (const o of Object.values(prev.offers))
+        if (o.status === "OFFERED" && after.offers[o.offerId]?.status !== "OFFERED")
+            events.push({ type: "ARRANGEMENT_REVOKED", airportId, flightId: o.flightId, arrangement: "OFFER", id: o.offerId, summary: `${airportId} withdrew offer to ${o.flightId}: runway ${o.runwayId} unavailable` })
+    for (const r of Object.values(prev.reservations))
+        if ((r.status === "CONFIRMED" || r.status === "CLEARED") && after.reservations[r.reservationId]?.status === "REVOKED")
+            events.push({ type: "ARRANGEMENT_REVOKED", airportId, flightId: r.flightId, arrangement: "RESERVATION", id: r.reservationId, summary: `${airportId} revoked ${r.flightId}'s ${r.runwayId} reservation: ${reason}` })
+    for (const c of Object.values(prev.clearances))
+        if (c.status === "ACTIVE" && after.clearances[c.clearanceId]?.status === "REVOKED")
+            events.push({ type: "ARRANGEMENT_REVOKED", airportId, flightId: c.flightId, arrangement: "CLEARANCE", id: c.clearanceId, summary: `${airportId} revoked ${c.flightId}'s landing clearance` })
+
+    const statusNotices: ProtocolEnvelope[] = [...notify].sort().map(flightId => ({
+        schemaVersion: 1,
+        messageId: stableUuid(prev.runId, prev.entityId, "AIRPORT_STATUS", statusRevision, flightId),
+        runId: prev.runId,
+        fromEntityId: prev.entityId,
+        toEntityId: flightEntityId(flightId),
+        correlationId: `${airportId}-status-${statusRevision}`,
+        causationId,
+        createdAtWallMs: ctx.wallNowMs,
+        expiresAtWallMs: null,
+        type: "AIRPORT_STATUS",
+        payload: { airportId, statusRevision, restrictions: conditions.restrictions },
+    }))
+
+    if (!sameRestrictions(prev.restrictions, conditions.restrictions)) {
         events.push({
             type: "AIRPORT_CONDITIONS_CHANGED",
             airportId,
@@ -383,15 +396,11 @@ function recomputeAirport(prev: AirportState, incidents: AirportState["incidents
 
     return {
         state: {
-            ...prev,
-            incidents,
-            restrictions: conditions.restrictions,
-            statusRevision,
-            operationalRevision,
-            offers,
-            reservations,
-            clearances,
-            outbox: appendOutbox(prev.outbox, notices),
+            ...after,
+            outbox: appendOutbox(
+                after.outbox,
+                [...statusNotices, ...revoked.out].map(e => outboxEntry(e, ctx.wallNowMs)),
+            ),
             stateRevision: prev.stateRevision + 1,
             decisionRevision: prev.decisionRevision + 1,
         },
@@ -497,7 +506,8 @@ export function applyIncident(state: EntityState, input: IncidentCreate, ctx: In
         // LOW_FUEL caps remaining fuel once, on first application of this ID.
         const fuelRemainingSec = create.kind === "LOW_FUEL" ? Math.min(state.fuelRemainingSec, LOW_FUEL_CAP_SEC) : state.fuelRemainingSec
         const r = recomputeFlight(state, { ...state, incidents, fuelRemainingSec })
-        next = r.state
+        const urgent = r.events.some(e => e.type === "FLIGHT_CONDITIONS_CHANGED" && e.renegotiate)
+        next = urgent && ctx.openEmergencyRound ? ctx.openEmergencyRound(r.state) : r.state
         events = [activated, ...r.events]
     }
     return {
