@@ -103,8 +103,8 @@ describe("timing profiles", () => {
     test("LOCAL keeps spec values; HOSTED is the agreed profile", () => {
         expect(RELAY_TIMING.LOCAL.replyCollectionWindowMs).toBe(4000)
         expect(RELAY_TIMING.LOCAL.offerTtlMs).toBe(20000)
-        expect(RELAY_TIMING.HOSTED.replyCollectionWindowMs).toBe(30000)
-        expect(RELAY_TIMING.HOSTED.offerTtlMs).toBe(90000)
+        expect(RELAY_TIMING.HOSTED.replyCollectionWindowMs).toBe(60000)
+        expect(RELAY_TIMING.HOSTED.offerTtlMs).toBe(120000)
         expect(minSlotLeadSimSec(1, RELAY_TIMING.HOSTED)).toBe(60)
         expect(minSlotLeadSimSec(5, RELAY_TIMING.HOSTED)).toBe(225)
         expect(minSlotLeadSimSec(10, RELAY_TIMING.LOCAL)).toBe(60)

@@ -71,19 +71,25 @@ export function selectDue(entityId: EntityId, entries: OutboxEntry[], nowMs: num
 // durable record, but an actor may persist only the transport receipt and the caller may build
 // a new OutboxPort each pass, so the schedule is also kept here (keyed by the long-lived
 // transport) and the later of the two times wins. After a restart the persisted times apply.
-type DispatchMemory = { flying: Set<string>; schedule: Map<string, { attempts: number; nextAt: number }> }
+type DispatchMemory = { flying: Set<string>; schedule: Map<string, { attempts: number; nextAt: number }>; busyUntil: number }
 const memories = new WeakMap<object, DispatchMemory>()
 const memoryFor = (key: object) => {
     let m = memories.get(key)
-    if (!m) memories.set(key, (m = { flying: new Set(), schedule: new Map() }))
+    if (!m) memories.set(key, (m = { flying: new Set(), schedule: new Map(), busyUntil: 0 }))
     return m
 }
+
+const RELAY_BUSY_PAUSE_MS = 3_000
 
 /** One dispatcher pass over every entity's durable outbox. */
 export async function dispatchDueOutboxes(ctx: DispatchContext): Promise<DispatchReport> {
     const now = ctx.now ?? Date.now
-    const { flying, schedule } = memoryFor(ctx.transport)
+    const memory = memoryFor(ctx.transport)
+    const { flying, schedule } = memory
     const report: DispatchReport = { due: 0, sent: 0, failed: 0, skipped: 0 }
+    // Hosted Relay answered 429 (workspace_busy / delivery depth): hold every send briefly
+    // instead of letting six parallel retries keep the workspace saturated.
+    if (memory.busyUntil > now()) return report
 
     const work: { entityId: EntityId; entry: OutboxEntry }[] = []
     const listed = new Set<string>()
@@ -126,6 +132,7 @@ export async function dispatchDueOutboxes(ctx: DispatchContext): Promise<Dispatc
                 // Non-retryable (malformed or oversized) entries back off at the steady rate so they
                 // stay visible without hammering Relay; the owning actor decides what to do with them.
                 const delay = err instanceof RelayTransportError && !err.retryable ? ctx.timing.ackRetrySteadyMs : retryDelayMs(ctx.timing, attempt)
+                if (err instanceof RelayTransportError && err.status === 429) memory.busyUntil = Math.max(memory.busyUntil, now() + RELAY_BUSY_PAUSE_MS)
                 schedule.set(id, { attempts: attempt, nextAt: now() + delay })
                 await ctx.outbox
                     .recordAttempt(entityId, { messageId: id, transportMessageId: entry.transportMessageId, attemptCount: attempt, nextAttemptAtWallMs: now() + delay })

@@ -6,9 +6,11 @@
 // - POST /dm takes 7 to 12 s per send and `dm.received` events carry no recipient or metadata.
 // - POST /channels/{name}/messages takes 3.3 to 4.2 s; `message.created` events return the
 //   sender's agent_name and our `data` as `metadata`, 3 to 7 s later.
-// So each entity keeps its own identity and token (Relay authenticates the sender), all of a
-// run's identities join channel `ghost-<runId first 8>`, and the recipient handle rides in
-// `data.to`. @agent-relay/sdk 15.0.0-next.10 wraps the same REST calls; this adapter calls REST
+// So each entity keeps its own identity and token (Relay authenticates the sender), and the
+// recipient handle rides in `data.to`. Each identity posts to its own one-member channel
+// `<handle>-out`: on a shared run channel every post fanned out to all 3+N members and hosted
+// Relay answered 429 workspace_delivery_depth_exceeded / workspace_busy at 10 flights. Nobody
+// reads member inboxes; delivery is the workspace event log below, filtered to this run. @agent-relay/sdk 15.0.0-next.10 wraps the same REST calls; this adapter calls REST
 // directly so the measured endpoints, idempotency header and 503 handling are explicit.
 //
 // Delivery: the durable path is the workspace event log, read from a persisted cursor every
@@ -38,6 +40,9 @@ import {
 } from "./transport.ts"
 
 export const DEFAULT_RELAY_BASE_URL = "https://cast.agentrelay.com/v1"
+const SENDER_CHANNEL_SUFFIX = "-out"
+/** One-member outgoing channel per identity (handles already start with the run channel name). */
+export const senderChannel = (handle: string) => `${handle}${SENDER_CHANNEL_SUFFIX}`
 const LOOKUP_LAG_MS = 2_500
 const REQUEST_TIMEOUT_MS = 20_000
 
@@ -166,6 +171,8 @@ export type HostedRelayOptions = {
     /** Persisted workspace-event cursor; defaults to in-memory starting at 0. */
     cursor?: CursorStore
     pollIntervalMs?: number
+    /** Concurrent channel posts across all identities (RELAY_MAX_CONCURRENT_SENDS, default 4). */
+    maxConcurrentSends?: number
     /** Route a message as soon as Relay accepts it. The log copy is deduplicated downstream. */
     localEcho?: boolean
     registerConcurrency?: number
@@ -217,16 +224,6 @@ export class HostedRelayTransport implements RelayTransport {
         this.channel = runChannelName(runId)
         this.byHandle = new Map(entities.map(e => [e.handle, e]))
         const key = this.opts.workspaceKey
-        const channel = this.channel
-
-        await withRetry(
-            () =>
-                this.rest.call("/channels", { token: key, body: { name: channel, topic: `Ghost Tower run ${runId}` } }).catch(err => {
-                    if (err instanceof RelayTransportError && err.status === 409) return null
-                    throw err
-                }),
-            [1_000, 2_000, 4_000],
-        )
 
         const fresh: string[] = []
         await pool(entities, this.opts.registerConcurrency ?? 6, async e => {
@@ -243,15 +240,14 @@ export class HostedRelayTransport implements RelayTransport {
 
         await pool(entities, this.opts.registerConcurrency ?? 6, async e => {
             const rec = this.opts.tokenStore.get(e.handle)!
+            const channel = senderChannel(e.handle)
             if (rec.channels.includes(channel)) return
-            await withRetry(
-                () =>
-                    this.rest.call(`/channels/${encodeURIComponent(channel)}/join`, { token: rec.token }).catch(err => {
-                        if (err instanceof RelayTransportError && err.status === 409) return null
-                        throw err
-                    }),
-                [1_500, 3_000, 5_000],
-            )
+            const ok409 = (err: unknown) => {
+                if (err instanceof RelayTransportError && err.status === 409) return null
+                throw err
+            }
+            await withRetry(() => this.rest.call("/channels", { token: key, body: { name: channel, topic: `Ghost Tower ${e.entityId}` } }).catch(ok409), [1_000, 2_000, 4_000])
+            await withRetry(() => this.rest.call(`/channels/${encodeURIComponent(channel)}/join`, { token: rec.token }).catch(ok409), [1_500, 3_000, 5_000])
             this.opts.tokenStore.put({ ...rec, channels: [...rec.channels, channel] })
         })
 
@@ -286,11 +282,19 @@ export class HostedRelayTransport implements RelayTransport {
         if (!rec) throw new RelayTransportError(`no Relay identity for ${envelope.fromEntityId}`, "UNKNOWN_IDENTITY", false)
         if (!this.byHandle.has(data.to)) throw new RelayTransportError(`recipient ${envelope.toEntityId} is not in this run`, "UNKNOWN_RECIPIENT", false)
 
-        const msg: any = await this.rest.call(`/channels/${encodeURIComponent(this.channel)}/messages`, {
-            token: rec.token,
-            body: { text, data },
-            idempotencyKey: envelope.messageId,
-        })
+        // One bounded pool for every post (outbox sends and background DOMAIN_ACKs): unbounded
+        // ACK bursts on top of six outbox sends drew 429 workspace_busy from hosted Relay.
+        await this.acquireSendSlot()
+        let msg: any
+        try {
+            msg = await this.rest.call(`/channels/${encodeURIComponent(senderChannel(senderHandle))}/messages`, {
+                token: rec.token,
+                body: { text, data },
+                idempotencyKey: envelope.messageId,
+            })
+        } finally {
+            this.releaseSendSlot()
+        }
         const transportMessageId = String(msg?.id ?? msg?.message?.id ?? "")
         if (!transportMessageId) throw new RelayTransportError("Relay accepted the message without an id", "NO_MESSAGE_ID", true)
         this.stats.sent++
@@ -301,7 +305,7 @@ export class HostedRelayTransport implements RelayTransport {
                 senderHandle: String(msg?.agent_name ?? senderHandle),
                 recipientHandle: data.to,
                 text,
-                channel: this.channel,
+                channel: senderChannel(senderHandle),
                 receivedAtWallMs: Date.now(),
                 via: "echo",
             }
@@ -351,7 +355,7 @@ export class HostedRelayTransport implements RelayTransport {
                 let last = since
                 for (const ev of events) {
                     const seq = Number(ev.seq)
-                    if (ev.type === "message.created" && ev.payload?.channel === channel) {
+                    if (ev.type === "message.created" && this.isRunChannel(ev.payload?.channel)) {
                         const m = ev.payload.message ?? {}
                         // A handler failure throws here and leaves the cursor before this event.
                         await this.deliver({
@@ -359,7 +363,7 @@ export class HostedRelayTransport implements RelayTransport {
                             senderHandle: String(m.agent_name ?? ""),
                             recipientHandle: typeof m.metadata?.to === "string" ? m.metadata.to : null,
                             text: String(m.text ?? ""),
-                            channel,
+                            channel: String(ev.payload.channel),
                             receivedAtWallMs: Date.now(),
                             via: "poll",
                         })
@@ -380,6 +384,28 @@ export class HostedRelayTransport implements RelayTransport {
             this.stats.lastError = (err as Error).message
             this.opts.onError?.("reconcile", err)
         }
+    }
+
+    private sendsInFlight = 0
+    private sendWaiters: Array<() => void> = []
+    private async acquireSendSlot(): Promise<void> {
+        const max = this.opts.maxConcurrentSends ?? 4
+        if (this.sendsInFlight < max) {
+            this.sendsInFlight++
+            return
+        }
+        await new Promise<void>(resolve => this.sendWaiters.push(resolve))
+    }
+    private releaseSendSlot() {
+        const next = this.sendWaiters.shift()
+        if (next) next() // the slot passes straight to the next waiter
+        else this.sendsInFlight--
+    }
+
+    /** The run's sender channels, plus the old shared run channel for messages already in flight. */
+    private isRunChannel(name: unknown): boolean {
+        if (typeof name !== "string" || !this.channel) return false
+        return name === this.channel || (name.startsWith(`${this.channel}-`) && name.endsWith(SENDER_CHANNEL_SUFFIX))
     }
 
     private async deliver(raw: RawRelayMessage) {
@@ -414,6 +440,7 @@ export function hostedRelayFromEnv(env: Record<string, string | undefined> = pro
         workspaceKey,
         tokenStore: fileTokenStore(storePath, { baseUrl, workspaceKey }),
         localEcho: env.RELAY_LOCAL_ECHO !== "0",
+        maxConcurrentSends: Number(env.RELAY_MAX_CONCURRENT_SENDS) > 0 ? Number(env.RELAY_MAX_CONCURRENT_SENDS) : 4,
         ...extra,
     })
 }

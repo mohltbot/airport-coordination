@@ -127,9 +127,12 @@ export const RELAY_TIMING: { readonly [K in TransportProfile]: RelayTiming } = {
         expectedBookingWallSec: 6,
     },
     HOSTED: {
-        replyCollectionWindowMs: 30_000,
-        offerAcceptTimeoutMs: 30_000,
-        offerTtlMs: 90_000,
+        // Raised 2026-10-31 from 30/30/90 s: at 10 flights hosted hops measured 5 to 70 s, so
+        // offers arrived after the window and flights re-asked every airport. A round still
+        // closes as soon as every candidate has answered.
+        replyCollectionWindowMs: 60_000,
+        offerAcceptTimeoutMs: 45_000,
+        offerTtlMs: 120_000,
         ackRetryBackoffMs: [5_000, 10_000, 20_000, 40_000],
         ackRetrySteadyMs: 40_000,
         commandDelayedAfterMs: 15_000,

@@ -438,12 +438,16 @@ async function main() {
         const { resolveRelayTiming } = await import("@ghost-tower/domain/constants")
         transport = (relay.hostedRelayFromEnv as (e: typeof env) => RelayTransport)(env)
         const timing = resolveRelayTiming("HOSTED", env)
-        const dispatch = outbox.dispatchDueOutboxes as (ctx: { transport: RelayTransport; outbox: unknown; timing: unknown }) => Promise<unknown>
+        const dispatch = outbox.dispatchDueOutboxes as (ctx: { transport: RelayTransport; outbox: unknown; timing: unknown; log?: unknown }) => Promise<unknown>
         const relayTransport = transport
         dispatchOutboxes = async (lease, context) => {
             await dispatch({
                 transport: relayTransport,
                 timing,
+                // Failures only, plus slow sends: the success path would flood the log.
+                log: (e: { outcome: string; type: string; entityId: string; attempt: number; code: string | null; sendMs: number }) => {
+                    if (e.outcome !== "SENT" || e.sendMs > 5_000) log(`relay send ${e.outcome} ${e.type} from ${e.entityId} attempt ${e.attempt} ${e.code ?? ""} ${e.sendMs}ms`)
+                },
                 outbox: {
                     entities: () => repo.entities(lease.runId),
                     list: async (id: EntityId) => {
@@ -483,6 +487,11 @@ async function main() {
         dispatchOutboxes,
         publish,
         log,
+        // Delivered messages: latency from envelope creation, and anything not applied cleanly.
+        onRoute: e => {
+            if (e.outcome === "SKIPPED" || e.detail || e.latencyMs > 15_000 || !e.ackSent)
+                log(`relay recv ${e.type} ${e.from}->${e.to} ${e.outcome}/${e.code} ${e.latencyMs}ms ack=${e.ackSent}${e.detail ? ` ${e.detail}` : ""}`)
+        },
         onStatus: s => {
             if (s.state !== "RUNNING") log(`status ${s.state}${s.detail ? `: ${s.detail}` : ""}`)
         },

@@ -99,7 +99,7 @@ describe("slot search", () => {
     test("hosted Relay at 5x pushes the earliest slot out by minSlotLeadSimSec (225 s)", () => {
         const timing = negotiationTiming(RELAY_TIMING.HOSTED, 5)
         expect(timing.minSlotLeadSimSec).toBe(225)
-        expect(timing.offerTtlMs).toBe(90_000)
+        expect(timing.offerTtlMs).toBe(120_000)
         const r = findLandingOffer(alp(), { negotiationId: "F001-N1", flightId: "F001", requestMessageId: crypto.randomUUID(), facts: facts() }, {
             ...ctx,
             minSlotLeadSimSec: timing.minSlotLeadSimSec,
