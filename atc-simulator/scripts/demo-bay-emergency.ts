@@ -13,6 +13,7 @@
 // Flags: --speed 1|5|10 (5)  --flights N (10)  --seed N  --featured F001  --smoke-deadline SEC
 //        --settle-sec N (15)  --timeout-sec N (900)  --no-reset
 //        --smoke-on-enter     after the settle (MRY already closed), wait for Enter before SMOKE
+//        --no-incidents       stop after resume with zero incidents, for phone-driven runs
 // The operator capability is minted locally and never printed.
 import { CRUISE_SPEED_KNOTS, DEFAULT_SEED, SMOKE_DEADLINE_SEC } from "../packages/domain/src/constants.ts"
 import type { PublicFlight, PublicSnapshot, RunConfig, TimelineEvent } from "../packages/domain/src/contracts.ts"
@@ -33,6 +34,7 @@ const settleSec = Number(flag("settle-sec", "15"))
 const timeoutSec = Number(flag("timeout-sec", "900"))
 const noReset = argv.includes("--no-reset")
 const smokeOnEnter = argv.includes("--smoke-on-enter")
+const noIncidents = argv.includes("--no-incidents")
 if (![1, 5, 10].includes(speed)) throw new Error("--speed must be 1, 5 or 10")
 
 const server = loadConfig()
@@ -130,6 +132,10 @@ async function main() {
     const resumeAt = Date.now()
     await post(`/api/runs/${runId}/resume`, { operationId: crypto.randomUUID() })
     log("resume sent")
+    if (noIncidents) {
+        log(`--no-incidents: run ${runId} is RUNNING with zero incidents; trigger them from the phone (close MRY R1 and R2 before SMOKE on ${featured})`)
+        process.exit(0)
+    }
 
     // 3. close both MRY runways through the controller command path
     const closeIds = [await command(runId, "airport:MRY", "RUNWAY_CLOSED", { runwayId: "R1" }), await command(runId, "airport:MRY", "RUNWAY_CLOSED", { runwayId: "R2" })]
