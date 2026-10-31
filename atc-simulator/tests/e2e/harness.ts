@@ -29,6 +29,7 @@ export async function harness(page: Page, initial = bootstrap(fixture())) {
       if (path === '/api/join') return state.joinStatus === 200 ? json(state.bootstrap) : json({ error: { code: 'INVITE_EXPIRED', message: 'Invitation expired', retryable: false } }, state.joinStatus);
       if (path.endsWith('/commands')) return state.commandStatus === 202 ? json(state.malformedCommand ? { accepted: true } : { commandId: body.commandId }, 202) : json({ error: { code: 'SESSION_EXPIRED', message: 'Session expired', retryable: false } }, state.commandStatus);
       if (path === '/api/runs') { const next = state.bootstrap.snapshot ? structuredClone(state.bootstrap.snapshot) : fixture(); next.config = body.config; next.phase = 'CONFIGURING'; state.bootstrap = bootstrap(next, 'OPERATOR'); return json(descriptor(next)); }
+      if (path.endsWith('/speed') && state.bootstrap.snapshot) { state.bootstrap.snapshot.config.speed = body.speed; state.bootstrap.snapshot.projectionVersion++; state.bootstrap.activeRun = descriptor(state.bootstrap.snapshot); }
       if (path.endsWith('/start') && state.bootstrap.snapshot) { state.bootstrap.snapshot.phase = 'RUNNING'; state.bootstrap.activeRun = descriptor(state.bootstrap.snapshot); }
       return json(state.bootstrap.activeRun);
     }

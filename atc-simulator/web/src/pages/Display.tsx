@@ -94,7 +94,7 @@ export function Display() {
             <select
               aria-label="Run speed"
               value={snapshot?.config.speed ?? 5}
-              disabled={!operator || sim.busy || !snapshot || needsSetup}
+              disabled={!operator || sim.busy || !snapshot || ["STARTING", "RESETTING", "COMPLETED"].includes(phase)}
               onChange={(e) =>
                 void act(() =>
                   sim.setSpeed(Number(e.target.value) as 1 | 5 | 10),
