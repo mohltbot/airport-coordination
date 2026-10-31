@@ -14,7 +14,7 @@ import {
     type NegotiationContext,
     type NegotiationTiming,
 } from "../../packages/domain/src/negotiation.ts"
-import { NYC_BOX, NYC_DESTINATIONS, NYC_SPAWN_NM } from "../../packages/domain/src/nyc.ts"
+import { NYC_BOX, NYC_SPAWN_NM, nycDestination } from "../../packages/domain/src/nyc.ts"
 import { createWorld } from "../../packages/domain/src/world.ts"
 
 const runId = "6a1f0c2e-5b7d-4e8a-9c3f-2d4b6e8f0a1c"
@@ -85,12 +85,12 @@ class Nyc {
 }
 
 describe("NYC placement", () => {
-    test("8 flights inbound to JFK and LGA round-robin, inside the New York view, ENROUTE NORMAL 240 kt, fuel >= 3600 s", () => {
+    test("8 flights, 6 inbound to JFK and 2 to LGA, inside the New York view, ENROUTE NORMAL 240 kt, fuel >= 3600 s", () => {
         const w = createWorld(nycConfig(), { runId, operationId: "op" })
         expect(w).toEqual(createWorld(nycConfig(), { runId, operationId: "op" }))
         expect(w.flights.map(f => f.flightId)).toEqual(["F001", "F002", "F003", "F004", "F005", "F006", "F007", "F008"])
         w.flights.forEach((f, i) => {
-            expect(f.originalDestination).toBe(NYC_DESTINATIONS[i % 2]!)
+            expect(f.originalDestination).toBe(nycDestination(i))
             const d = distanceNm(f.position, position(f.originalDestination))
             expect(d).toBeGreaterThanOrEqual(NYC_SPAWN_NM.min - 0.01)
             expect(d).toBeLessThanOrEqual(NYC_SPAWN_NM.max + 0.01)
@@ -100,8 +100,8 @@ describe("NYC placement", () => {
             expect(f.position.y).toBeLessThanOrEqual(NYC_BOX.maxY)
             expect(f).toMatchObject({ phase: "ENROUTE", priority: "NORMAL", speedKnots: 240 })
             expect(f.fuelRemainingSec).toBeGreaterThanOrEqual(3600)
-            // EWR is a short hop: well inside fuel.
-            expect((distanceNm(f.position, position("EWR")) / 240) * 3600).toBeLessThan(f.fuelRemainingSec - 600)
+            // LGA and EWR are short hops: well inside fuel.
+            for (const alt of ["LGA", "EWR"] as const) expect((distanceNm(f.position, position(alt)) / 240) * 3600).toBeLessThan(f.fuelRemainingSec - 600)
         })
     })
 
@@ -121,49 +121,49 @@ describe("NYC placement", () => {
 })
 
 describe("NYC weather diversion", () => {
-    test("JFK and LGA close for weather: bookings are revoked, both refuse truthfully, EWR takes everyone it can fit", () => {
+    test("JFK closes for weather: its bookings are revoked, JFK refuses truthfully, LGA and EWR take them within runway capacity", () => {
         const n = new Nyc()
+        expect(Object.values(n.flights).filter(f => f.originalDestination === "JFK")).toHaveLength(6)
         for (const id of Object.keys(n.flights)) n.flights[id] = openRound(n.flights[id]!, "INITIAL", n.ctx()).state
         n.flush()
         for (const f of Object.values(n.flights)) expect(f.activeAssignment?.airportId).toBe(f.originalDestination)
 
         n.weather("JFK")
-        n.weather("LGA")
         n.flush()
 
         const revoked = n.delivered.filter(e => e.type === "RESERVATION_REVOKED")
-        expect(revoked).toHaveLength(8)
-        // Every diversion round asks EWR, and the closed airports answer with their real reason.
-        for (const f of Object.values(n.flights)) {
+        expect(revoked).toHaveLength(6)
+        expect(new Set(revoked.map(e => e.fromEntityId))).toEqual(new Set(["airport:JFK"]))
+        for (const f of Object.values(n.flights).filter(f => f.originalDestination === "JFK")) {
             const asked = n.delivered.filter(e => e.fromEntityId === f.entityId && e.type === "LANDING_REQUEST").map(e => e.toEntityId)
             expect(asked).toContain("airport:EWR")
+            expect(asked).toContain("airport:LGA")
+            expect(["LGA", "EWR"]).toContain(f.activeAssignment?.airportId ?? "none")
         }
-        const refusals = n.delivered.filter(e => e.type === "LANDING_REFUSED" && (e.fromEntityId === "airport:JFK" || e.fromEntityId === "airport:LGA"))
+        const refusals = n.delivered.filter(e => e.type === "LANDING_REFUSED" && e.fromEntityId === "airport:JFK")
         for (const r of refusals) expect(r.payload).toMatchObject({ reasonCode: "WEATHER_CLOSED" })
+        // LGA background traffic keeps its booking.
+        for (const f of Object.values(n.flights).filter(f => f.originalDestination === "LGA")) expect(f.activeAssignment?.airportId).toBe("LGA")
+        expect(Object.values(n.flights).some(f => f.activeAssignment?.airportId === "JFK")).toBe(false)
 
-        const atEwr = Object.values(n.flights).filter(f => f.activeAssignment?.airportId === "EWR")
-        expect(atEwr).toHaveLength(8)
-        // EWR's runway capacity: two runways, one landing per runway per occupancy window.
-        const reservations = Object.values(n.airports.EWR!.reservations).filter(r => r.status === "CONFIRMED")
-        expect(reservations).toHaveLength(8)
-        for (const runwayId of ["R1", "R2"]) {
-            const slots = reservations.filter(r => r.runwayId === runwayId).map(r => r.slotStartSimSec).sort((a, b) => a - b)
-            for (let i = 1; i < slots.length; i++) expect(slots[i]! - slots[i - 1]!).toBeGreaterThanOrEqual(RUNWAY_OCCUPANCY_SEC)
+        // Runway capacity at both open airports: one landing per runway per occupancy window.
+        for (const id of ["LGA", "EWR"] as const) {
+            const reservations = Object.values(n.airports[id]!.reservations).filter(r => r.status === "CONFIRMED")
+            for (const runwayId of ["R1", "R2"]) {
+                const slots = reservations.filter(r => r.runwayId === runwayId).map(r => r.slotStartSimSec).sort((a, b) => a - b)
+                for (let i = 1; i < slots.length; i++) expect(slots[i]! - slots[i - 1]!).toBeGreaterThanOrEqual(RUNWAY_OCCUPANCY_SEC)
+            }
         }
-        expect(Object.values(n.flights).some(f => f.activeAssignment?.airportId === "JFK" || f.activeAssignment?.airportId === "LGA")).toBe(false)
+        expect(Object.values(n.flights).filter(f => f.activeAssignment).length).toBe(8)
     })
 
-    test("once a flight knows JFK and LGA are closed, EWR heads its candidate list", () => {
+    test("once a flight knows JFK is closed, LGA and EWR head its candidate list", () => {
         const n = new Nyc()
         n.weather("JFK")
-        n.weather("LGA")
-        const status = (id: "JFK" | "LGA") => n.airports[id]!
+        const jfk = n.airports.JFK!
         const f = n.flights.F001!
-        const known = {
-            ...f,
-            knownAirportStatus: Object.fromEntries((["JFK", "LGA"] as const).map(id => [id, { airportId: id, statusRevision: status(id).statusRevision, restrictions: status(id).restrictions }])),
-        } as FlightState
-        expect(planCandidates(known, "CLOSURE", n.ctx())[0]).toBe("EWR")
+        const known = { ...f, knownAirportStatus: { JFK: { airportId: "JFK", statusRevision: jfk.statusRevision, restrictions: jfk.restrictions } } } as FlightState
+        expect(planCandidates(known, "CLOSURE", n.ctx()).slice(0, 2).sort()).toEqual(["EWR", "LGA"])
         expect(planCandidates(f, "CLOSURE", n.ctx())).toContain("EWR")
     })
 })
