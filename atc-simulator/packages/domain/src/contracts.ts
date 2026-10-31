@@ -351,36 +351,49 @@ const receivedFields = {
     receivedAtWallMs: WallMsSchema,
 }
 
-function envelopeUnion<E extends z.ZodRawShape>(extra: E) {
-    const m = <T extends MessageType>(type: T) =>
-        z.strictObject({ ...envelopeBase, ...extra, type: z.literal(type), payload: PayloadSchemas[type] })
-    const c = <T extends "INCIDENT_CREATE" | "INCIDENT_CLEAR">(type: T) =>
-        z.strictObject({ ...envelopeBase, ...commandFields, ...extra, type: z.literal(type), payload: PayloadSchemas[type] })
-    return z.discriminatedUnion("type", [
-        c("INCIDENT_CREATE"),
-        c("INCIDENT_CLEAR"),
-        m("COMMAND_RESULT"),
-        m("AIRPORT_STATUS"),
-        m("LANDING_REQUEST"),
-        m("LANDING_OFFER"),
-        m("LANDING_REFUSED"),
-        m("OFFER_ACCEPT"),
-        m("OFFER_DECLINE"),
-        m("LANDING_CONFIRMED"),
-        m("RESERVATION_RELEASE"),
-        m("RESERVATION_REVOKED"),
-        m("RESERVATION_STATUS_REQUEST"),
-        m("RESERVATION_STATUS"),
-        m("CLEARANCE_REQUEST"),
-        m("CLEARANCE_GRANTED"),
-        m("CLEARANCE_REFUSED"),
-        m("DOMAIN_ACK"),
-    ])
-}
-
-export const ProtocolEnvelopeSchema = envelopeUnion({})
+// Written out member by member: the Terse client generator copies helper-function bodies into
+// declarations and then fails ("An implementation cannot be declared in ambient contexts").
+export const ProtocolEnvelopeSchema = z.discriminatedUnion("type", [
+    z.strictObject({ ...envelopeBase, ...commandFields, type: z.literal("INCIDENT_CREATE"), payload: PayloadSchemas.INCIDENT_CREATE }),
+    z.strictObject({ ...envelopeBase, ...commandFields, type: z.literal("INCIDENT_CLEAR"), payload: PayloadSchemas.INCIDENT_CLEAR }),
+    z.strictObject({ ...envelopeBase, type: z.literal("COMMAND_RESULT"), payload: PayloadSchemas.COMMAND_RESULT }),
+    z.strictObject({ ...envelopeBase, type: z.literal("AIRPORT_STATUS"), payload: PayloadSchemas.AIRPORT_STATUS }),
+    z.strictObject({ ...envelopeBase, type: z.literal("LANDING_REQUEST"), payload: PayloadSchemas.LANDING_REQUEST }),
+    z.strictObject({ ...envelopeBase, type: z.literal("LANDING_OFFER"), payload: PayloadSchemas.LANDING_OFFER }),
+    z.strictObject({ ...envelopeBase, type: z.literal("LANDING_REFUSED"), payload: PayloadSchemas.LANDING_REFUSED }),
+    z.strictObject({ ...envelopeBase, type: z.literal("OFFER_ACCEPT"), payload: PayloadSchemas.OFFER_ACCEPT }),
+    z.strictObject({ ...envelopeBase, type: z.literal("OFFER_DECLINE"), payload: PayloadSchemas.OFFER_DECLINE }),
+    z.strictObject({ ...envelopeBase, type: z.literal("LANDING_CONFIRMED"), payload: PayloadSchemas.LANDING_CONFIRMED }),
+    z.strictObject({ ...envelopeBase, type: z.literal("RESERVATION_RELEASE"), payload: PayloadSchemas.RESERVATION_RELEASE }),
+    z.strictObject({ ...envelopeBase, type: z.literal("RESERVATION_REVOKED"), payload: PayloadSchemas.RESERVATION_REVOKED }),
+    z.strictObject({ ...envelopeBase, type: z.literal("RESERVATION_STATUS_REQUEST"), payload: PayloadSchemas.RESERVATION_STATUS_REQUEST }),
+    z.strictObject({ ...envelopeBase, type: z.literal("RESERVATION_STATUS"), payload: PayloadSchemas.RESERVATION_STATUS }),
+    z.strictObject({ ...envelopeBase, type: z.literal("CLEARANCE_REQUEST"), payload: PayloadSchemas.CLEARANCE_REQUEST }),
+    z.strictObject({ ...envelopeBase, type: z.literal("CLEARANCE_GRANTED"), payload: PayloadSchemas.CLEARANCE_GRANTED }),
+    z.strictObject({ ...envelopeBase, type: z.literal("CLEARANCE_REFUSED"), payload: PayloadSchemas.CLEARANCE_REFUSED }),
+    z.strictObject({ ...envelopeBase, type: z.literal("DOMAIN_ACK"), payload: PayloadSchemas.DOMAIN_ACK }),
+])
 export type ProtocolEnvelope = z.infer<typeof ProtocolEnvelopeSchema>
-export const ReceivedEnvelopeSchema = envelopeUnion(receivedFields)
+export const ReceivedEnvelopeSchema = z.discriminatedUnion("type", [
+    z.strictObject({ ...envelopeBase, ...commandFields, ...receivedFields, type: z.literal("INCIDENT_CREATE"), payload: PayloadSchemas.INCIDENT_CREATE }),
+    z.strictObject({ ...envelopeBase, ...commandFields, ...receivedFields, type: z.literal("INCIDENT_CLEAR"), payload: PayloadSchemas.INCIDENT_CLEAR }),
+    z.strictObject({ ...envelopeBase, ...receivedFields, type: z.literal("COMMAND_RESULT"), payload: PayloadSchemas.COMMAND_RESULT }),
+    z.strictObject({ ...envelopeBase, ...receivedFields, type: z.literal("AIRPORT_STATUS"), payload: PayloadSchemas.AIRPORT_STATUS }),
+    z.strictObject({ ...envelopeBase, ...receivedFields, type: z.literal("LANDING_REQUEST"), payload: PayloadSchemas.LANDING_REQUEST }),
+    z.strictObject({ ...envelopeBase, ...receivedFields, type: z.literal("LANDING_OFFER"), payload: PayloadSchemas.LANDING_OFFER }),
+    z.strictObject({ ...envelopeBase, ...receivedFields, type: z.literal("LANDING_REFUSED"), payload: PayloadSchemas.LANDING_REFUSED }),
+    z.strictObject({ ...envelopeBase, ...receivedFields, type: z.literal("OFFER_ACCEPT"), payload: PayloadSchemas.OFFER_ACCEPT }),
+    z.strictObject({ ...envelopeBase, ...receivedFields, type: z.literal("OFFER_DECLINE"), payload: PayloadSchemas.OFFER_DECLINE }),
+    z.strictObject({ ...envelopeBase, ...receivedFields, type: z.literal("LANDING_CONFIRMED"), payload: PayloadSchemas.LANDING_CONFIRMED }),
+    z.strictObject({ ...envelopeBase, ...receivedFields, type: z.literal("RESERVATION_RELEASE"), payload: PayloadSchemas.RESERVATION_RELEASE }),
+    z.strictObject({ ...envelopeBase, ...receivedFields, type: z.literal("RESERVATION_REVOKED"), payload: PayloadSchemas.RESERVATION_REVOKED }),
+    z.strictObject({ ...envelopeBase, ...receivedFields, type: z.literal("RESERVATION_STATUS_REQUEST"), payload: PayloadSchemas.RESERVATION_STATUS_REQUEST }),
+    z.strictObject({ ...envelopeBase, ...receivedFields, type: z.literal("RESERVATION_STATUS"), payload: PayloadSchemas.RESERVATION_STATUS }),
+    z.strictObject({ ...envelopeBase, ...receivedFields, type: z.literal("CLEARANCE_REQUEST"), payload: PayloadSchemas.CLEARANCE_REQUEST }),
+    z.strictObject({ ...envelopeBase, ...receivedFields, type: z.literal("CLEARANCE_GRANTED"), payload: PayloadSchemas.CLEARANCE_GRANTED }),
+    z.strictObject({ ...envelopeBase, ...receivedFields, type: z.literal("CLEARANCE_REFUSED"), payload: PayloadSchemas.CLEARANCE_REFUSED }),
+    z.strictObject({ ...envelopeBase, ...receivedFields, type: z.literal("DOMAIN_ACK"), payload: PayloadSchemas.DOMAIN_ACK }),
+])
 export type ReceivedEnvelope = z.infer<typeof ReceivedEnvelopeSchema>
 export type EnvelopeOf<T extends MessageType> = Extract<ProtocolEnvelope, { type: T }>
 
