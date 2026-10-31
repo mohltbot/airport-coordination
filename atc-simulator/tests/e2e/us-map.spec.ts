@@ -22,7 +22,14 @@ test('Bay Area preset preserves view across snapshots and has honest regional co
   await page.getByLabel('Map region').selectOption('bay');
   await expect(page.getByText('No active towers in this view.',{exact:true})).toHaveCount(0);
   for (const code of ['SFO','OAK','SJC','MRY']) await expect(page.locator('.national-label').filter({hasText:code})).toBeVisible();
-  await expect(page.locator('.national-context-cities')).toContainText('San Francisco');
+  await expect(page.locator('.national-context-cities')).toHaveCount(0);
+  for (const code of ['SFO', 'OAK', 'SJC', 'MRY']) {
+    const label = page.getByRole('button', { name: `Select ${code}`, exact: true });
+    const rect = await label.locator('rect').boundingBox();
+    const marker = await page.locator('.national-airport').filter({ has: page.locator('title', { hasText: snapshot.airports.find(a => a.airportId === code)!.name }) }).locator('.national-airport-outer').boundingBox();
+    expect(Math.abs(rect!.x + rect!.width / 2 - marker!.x - marker!.width / 2)).toBeLessThan(1);
+    expect(rect!.y + rect!.height).toBeLessThan(marker!.y);
+  }
   const view=await page.locator('.national-map-svg').getAttribute('viewBox');
   const next=structuredClone(snapshot); next.projectionVersion++;
   await h.emit('snapshot',next);
