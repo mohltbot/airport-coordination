@@ -171,7 +171,7 @@ export type HostedRelayOptions = {
     /** Persisted workspace-event cursor; defaults to in-memory starting at 0. */
     cursor?: CursorStore
     pollIntervalMs?: number
-    /** Concurrent channel posts across all identities (RELAY_MAX_CONCURRENT_SENDS, default 4). */
+    /** Concurrent channel posts across all identities (RELAY_MAX_CONCURRENT_SENDS, default 4). Setup (register, channel, join) runs 2 at a time with 2/4/8/16 s backoff: hosted Relay answered 429 workspace_busy at 6. */
     maxConcurrentSends?: number
     /** Route a message as soon as Relay accepts it. The log copy is deduplicated downstream. */
     localEcho?: boolean
@@ -230,19 +230,19 @@ export class HostedRelayTransport implements RelayTransport {
         const key = this.opts.workspaceKey
 
         const fresh: string[] = []
-        await pool(entities, this.opts.registerConcurrency ?? 6, async e => {
+        await pool(entities, this.opts.registerConcurrency ?? 2, async e => {
             if (this.opts.tokenStore.get(e.handle)) {
                 this.stats.reconnected++
                 return
             }
-            const agent = await withRetry(() => this.register(e.handle), [1_500, 3_000])
+            const agent = await withRetry(() => this.register(e.handle), [2_000, 4_000, 8_000, 16_000])
             this.opts.tokenStore.put({ handle: e.handle, agentId: String(agent.id), token: agent.token, channels: [], registeredAtWallMs: Date.now() })
             this.stats.registered++
             fresh.push(e.handle)
         })
         if (fresh.length) await Bun.sleep(LOOKUP_LAG_MS)
 
-        await pool(entities, this.opts.registerConcurrency ?? 6, async e => {
+        await pool(entities, this.opts.registerConcurrency ?? 2, async e => {
             const rec = this.opts.tokenStore.get(e.handle)!
             const channel = senderChannel(e.handle)
             if (rec.channels.includes(channel)) return
@@ -250,8 +250,8 @@ export class HostedRelayTransport implements RelayTransport {
                 if (err instanceof RelayTransportError && err.status === 409) return null
                 throw err
             }
-            await withRetry(() => this.rest.call("/channels", { token: key, body: { name: channel, topic: `Ghost Tower ${e.entityId}` } }).catch(ok409), [1_000, 2_000, 4_000])
-            await withRetry(() => this.rest.call(`/channels/${encodeURIComponent(channel)}/join`, { token: rec.token }).catch(ok409), [1_500, 3_000, 5_000])
+            await withRetry(() => this.rest.call("/channels", { token: key, body: { name: channel, topic: `Ghost Tower ${e.entityId}` } }).catch(ok409), [2_000, 4_000, 8_000, 16_000])
+            await withRetry(() => this.rest.call(`/channels/${encodeURIComponent(channel)}/join`, { token: rec.token }).catch(ok409), [2_000, 4_000, 8_000, 16_000])
             this.opts.tokenStore.put({ ...rec, channels: [...rec.channels, channel] })
         })
 
