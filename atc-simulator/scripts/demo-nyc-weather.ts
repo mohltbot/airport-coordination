@@ -4,13 +4,13 @@
 // outboxes (messages that travelled over Agent Relay).
 //
 //   1. reset the active run if one is live, create a US run focused on New York
-//      (8 flights: 6 inbound to JFK, 2 to LGA, all inside the Northeast view)
+//      (4 flights: 3 inbound to JFK, 1 to LGA, all inside the Northeast view)
 //   2. start (init saga, PAUSED) and resume
 //   3. settle: wait until JFK has confirmed bookings (or --settle-sec runs out)
 //   4. WEATHER_CLOSED at airport:JFK through the controller command path (LGA and EWR stay open)
 //   5. follow the timeline until every JFK flight is booked at LGA or EWR and has landed (or timeout)
 //
-// Flags: --speed 1|5|10 (10)  --flights N (8)  --seed N  --settle-sec N (8)  --timeout-sec N (300)
+// Flags: --speed 1|5|10 (10)  --flights N (4)  --seed N  --settle-sec N (8)  --timeout-sec N (300)
 //        --no-reset  --no-incidents (leave WEATHER_CLOSED to the phone)
 //        --weather-on-enter  after the settle, pause the run and wait for Enter; Enter resumes and closes JFK
 // The operator capability is minted locally and never printed.
@@ -25,7 +25,7 @@ const flag = (name: string, fallback: string) => {
     return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1]! : fallback
 }
 const speed = Number(flag("speed", "10")) as 1 | 5 | 10
-const flightCount = Number(flag("flights", "8"))
+const flightCount = Number(flag("flights", "4"))
 const seed = Number(flag("seed", String(DEFAULT_SEED)))
 const settleSec = Number(flag("settle-sec", "8"))
 const timeoutSec = Number(flag("timeout-sec", "300"))
