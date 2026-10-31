@@ -390,3 +390,28 @@ export function receiveControllerMessage(state: SimulationState, message: Receiv
         result,
     }
 }
+
+/** Proof fields of a controller command envelope (null for other types). */
+export function commandProofFields(envelope: ProtocolEnvelope): CommandProofFields | null {
+    if (envelope.type !== "INCIDENT_CREATE" && envelope.type !== "INCIDENT_CLEAR") return null
+    return {
+        runId: envelope.runId,
+        commandId: envelope.commandId,
+        commandSequence: envelope.commandSequence,
+        toEntityId: envelope.toEntityId,
+        type: envelope.type,
+        incidentId: envelope.payload.incidentId,
+    }
+}
+
+/** Server-side signing at dispatch: the worker holds COMMAND_SIGNING_SECRET,
+ *  the actor runtime may not. Wrap the controller outbox list with
+ *  `signControllerEntries(entries, f => commandProof(secret, f))`. */
+export function signControllerEntries(entries: OutboxEntry[], sign: (fields: CommandProofFields) => string): OutboxEntry[] {
+    return entries.map(e => {
+        const fields = commandProofFields(e.envelope)
+        if (!fields) return e
+        const authorization = sign(fields)
+        return authorization === (e.envelope as { authorization: string }).authorization ? e : { ...e, envelope: { ...e.envelope, authorization } as ProtocolEnvelope }
+    })
+}

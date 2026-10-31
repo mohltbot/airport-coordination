@@ -678,3 +678,17 @@ describe("SimulationActor ledger helpers (actors/src/ledger.ts)", () => {
         expect(controllerOutboxOnRoot(leased, lease, T0 + 1000).entries).toHaveLength(1)
     })
 })
+
+describe("dispatch-time signing", () => {
+    test("signControllerEntries re-signs command envelopes and leaves others alone", async () => {
+        const { signControllerEntries } = await import("../../packages/domain/src/command-ledger.ts")
+        const { commandProof, verifyCommandProof } = await import("../../server/src/relay/router.ts")
+        const cmd = createCmd(weather())
+        const sim = submit(simulation(), cmd).state
+        const target = receiveControllerCommand(airport(), envelopeFor(sim, cmd.commandId), ctx())
+        const signed = signControllerEntries([...sim.controllerOutbox, ...target.state.outbox], f => commandProof("k", f))
+        const env = signed[0]!.envelope as ControllerCommandEnvelope
+        expect(verifyCommandProof("k", { runId, commandId: cmd.commandId, commandSequence: 1, toEntityId: "airport:ALP", type: "INCIDENT_CREATE", incidentId: cmd.payload.incidentId }, env.authorization)).toBe(true)
+        expect(signed.slice(1)).toEqual(target.state.outbox)
+    })
+})

@@ -31,9 +31,10 @@ import {
     type DecisionMode,
     type NegotiationContext,
     type NegotiationTiming,
-} from "../../packages/domain/src/negotiation.ts"
-import { applied, checkFence, markOutboxAccepted, rejected } from "./durability.ts"
-import { fenceOnly, initializeEntity } from "./entity.ts"
+} from "../../packages/domain/src/negotiation.js"
+import { applied, checkFence, markOutboxAccepted, rejected } from "./durability.js"
+import { fenceOnly, initializeEntity } from "./entity.js"
+import { incidentHooks } from "./incident-receive.js"
 
 // ---------------------------------------------------------------- module-level helpers
 // Sync methods on an actor class throw in Terse 0.14.9, so all logic lives here.
@@ -102,6 +103,7 @@ function receiveStep(state: AirportState | null, ctx: MutationContext, message: 
             simNowSec: nctx.simNowSec,
             wallNowMs: ctx.wallNowMs,
             causationId: message.messageId,
+            ...incidentHooks(nctx),
         })
         const next = cancelRevokedHoldJobs(t.state, nctx, message.messageId)
         return { state: next, result: t.result }
