@@ -35,9 +35,9 @@ export function App() {
   const [fixture, setFixture] = useState<PublicSnapshot>();
   const [fixtureError, setFixtureError] = useState(false);
   useEffect(() => {
-    if (preview)
-      void import("../../tests/fixtures")
-        .then((m) => setFixture(m.samplePublicSnapshot))
+    if (import.meta.env.DEV && preview)
+      void import("./dev/us-preview")
+        .then(({ usPreviewSnapshot }) => setFixture(usPreviewSnapshot))
         .catch(() => setFixtureError(true));
   }, [preview]);
   if (preview && !fixture)

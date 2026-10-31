@@ -113,6 +113,7 @@ export function EntityInspector({
             {flight.priority === "EMERGENCY" ? "· ! EMERGENCY" : ""}
           </div>
           <dl className="inspector-facts">
+            {flight.originAirportId && <div><dt>Departed from</dt><dd>{snapshot.airports.find((airport) => airport.airportId === flight.originAirportId)?.name ?? flight.originAirportId}</dd></div>}
             <div>
               <dt>Fuel remaining</dt>
               <dd>{clock(flight.fuelRemainingSec)} sim</dd>

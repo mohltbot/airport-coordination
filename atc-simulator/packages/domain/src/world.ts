@@ -1,6 +1,6 @@
 // Seeded world generation (design §4). Pure and deterministic for a given config.
 import {
-    AIRPORTS,
+    airportsForNetwork,
     CRUISE_SPEED_KNOTS,
     INITIAL_FUEL_BASE_SEC,
     INITIAL_FUEL_RANGE_SEC,
@@ -55,7 +55,8 @@ export function flightIdFor(index: number): string {
 export function createWorld(config: RunConfig, options: WorldOptions): InitialWorld {
     const cfg = RunConfigSchema.parse(config)
     const { runId, operationId } = options
-    const airports: AirportState[] = AIRPORTS.map(a => ({
+    const directory = airportsForNetwork(cfg.airportNetwork)
+    const airports: AirportState[] = directory.map(a => ({
         ...common(runId, operationId),
         entityId: airportEntityId(a.airportId),
         airportId: a.airportId,
@@ -74,12 +75,13 @@ export function createWorld(config: RunConfig, options: WorldOptions): InitialWo
     const rand = mulberry32(cfg.seed)
     const flights: FlightState[] = []
     for (let i = 1; i <= cfg.flightCount; i++) {
-        const destination = AIRPORTS[(i - 1) % AIRPORTS.length]
+        const destination = directory[(i - 1) % directory.length]
         // Consumption order is fixed by the spec: angle, distance, fuel.
         const angle = 2 * Math.PI * rand()
         const distance = SPAWN_DISTANCE_MIN_NM + SPAWN_DISTANCE_RANGE_NM * rand()
         const fuel = INITIAL_FUEL_BASE_SEC + Math.floor(INITIAL_FUEL_RANGE_SEC * rand())
-        const position = polarOffset(destination.position, angle, distance)
+        const origin = cfg.continuousTraffic ? directory[i % directory.length]! : null
+        const position = origin ? { ...origin.position } : polarOffset(destination.position, angle, distance)
         const flightId = flightIdFor(i)
         flights.push({
             ...common(runId, operationId),
@@ -87,6 +89,7 @@ export function createWorld(config: RunConfig, options: WorldOptions): InitialWo
             flightId,
             callsign: `GHOST ${flightId.slice(1)}`,
             originalDestination: destination.airportId as AirportId,
+            ...(origin ? { originAirportId: origin.airportId as AirportId } : {}),
             position,
             headingDeg: headingDeg(position, destination.position),
             speedKnots: CRUISE_SPEED_KNOTS,
@@ -108,4 +111,14 @@ export function createWorld(config: RunConfig, options: WorldOptions): InitialWo
         })
     }
     return { airports, flights }
+}
+
+// Fresh legs have a fresh actor identity and start at the current authoritative sim time.
+export function createTrafficFlight(config: RunConfig, options: WorldOptions, sequence: number, simNowSec: number): FlightState {
+    const directory = airportsForNetwork(config.airportNetwork)
+    const initial = createWorld({ ...config, flightCount: 1, seed: (config.seed + sequence) >>> 0, continuousTraffic: true }, options).flights[0]!
+    const destination = directory[(sequence - 1) % directory.length]!
+    const origin = directory[sequence % directory.length]!
+    const flightId = flightIdFor(sequence)
+    return { ...initial, flightId, entityId: flightEntityId(flightId), callsign: `GHOST ${flightId.slice(1)}`, originalDestination: destination.airportId, originAirportId: origin.airportId, position: { ...origin.position }, headingDeg: headingDeg(origin.position, destination.position), lastAdvancedSimSec: simNowSec }
 }

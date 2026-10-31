@@ -5,6 +5,7 @@ import { FlightList } from "../components/FlightList";
 import { EntityInspector } from "../components/EntityInspector";
 import { Timeline } from "../components/Timeline";
 import { IncidentControls } from "../components/IncidentControls";
+import { US_AIRPORTS } from "../lib/us-geography";
 import {
   PhoneInvite,
   ResetDialog,
@@ -26,6 +27,9 @@ export function Display() {
   const [dialog, setDialog] = useState<"phone" | "reset" | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const snapshot = sim.snapshot;
+  const nationalMap = snapshot?.airports.some((airport) =>
+    US_AIRPORTS.some((known) => known.airportId === String(airport.airportId)),
+  ) ?? false;
   const operator =
     sim.bootstrap?.session.role === "OPERATOR" &&
     !sim.sessionExpired &&
@@ -41,6 +45,9 @@ export function Display() {
     setSelectedId(null);
     setDialog(null);
   }, [snapshot?.runId]);
+  useEffect(() => {
+    if (snapshot && selectedId && !selected) setSelectedId(null);
+  }, [snapshot, selectedId, selected]);
   const select = (id: string) => {
     setSelectedId(id);
     setFleetOpen(false);
@@ -58,7 +65,7 @@ export function Display() {
     }
   };
   return (
-    <div className="simulator" data-mobile-view={mobileView}>
+    <div className="simulator" data-mobile-view={mobileView} data-national-map={nationalMap} data-inspector-open={!!selectedId}>
       <header className="topbar">
         <a className="brand" href="/" aria-label="Ghost Tower home">
           <svg viewBox="0 0 28 28" width="28" height="28" aria-hidden="true">
@@ -197,11 +204,11 @@ export function Display() {
         <section className="map-column" aria-label="Live airspace">
           <div className="map-heading">
             <div>
-              <h2>Regional airspace</h2>
+              <h2>{nationalMap ? "United States airspace" : "Regional airspace"}</h2>
               <p>
                 {snapshot
                   ? `${snapshot.airports.length} airports · ${snapshot.flights.length} flights`
-                  : "Three airports · One shared sky"}
+                  : "Choose your airports · One shared sky"}
               </p>
             </div>
             <span className="mode-label">
@@ -242,7 +249,7 @@ export function Display() {
                   <circle cx="66" cy="40" r="4" />
                 </svg>
                 <h2>Ready for traffic</h2>
-                <p>Configure a run to bring Alpha, Bravo and Charlie online.</p>
+                <p>Configure a run to bring your airport network online.</p>
               </div>
             )}
           </div>
@@ -275,6 +282,7 @@ export function Display() {
           </div>
         </section>
         <aside className="right-panel" aria-label="Entity details">
+          {nationalMap && selectedId && <button className="inspector-close" aria-label="Close entity details" onClick={() => setSelectedId(null)}>Close details <span aria-hidden="true">×</span></button>}
           {snapshot ? (
             <EntityInspector snapshot={snapshot} selectedId={selectedId}>
               {selected && (

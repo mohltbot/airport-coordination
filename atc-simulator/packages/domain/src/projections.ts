@@ -201,6 +201,7 @@ export function toPublicFlight(f: FlightState, airports: AirportState[], wallNow
         priority: f.priority,
         deadlineSimSec: f.deadlineSimSec,
         originalDestination: f.originalDestination,
+        ...(f.originAirportId ? { originAirportId: f.originAirportId } : {}),
         activeAssignment: as
             ? {
                   airportId: as.airportId,

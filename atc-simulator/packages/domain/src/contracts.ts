@@ -23,7 +23,7 @@ export const RevisionSchema = z.number().int().nonnegative()
 
 export const AirportIdSchema = z.enum(AIRPORT_IDS)
 export type AirportId = z.infer<typeof AirportIdSchema>
-export const FlightIdSchema = z.string().regex(/^F\d{3}$/)
+export const FlightIdSchema = z.string().regex(/^F\d{3,5}$/)
 export type FlightId = string
 export const RunwayIdSchema = z.enum(RUNWAY_IDS)
 export type RunwayId = z.infer<typeof RunwayIdSchema>
@@ -33,11 +33,11 @@ export type FlightEntityId = `flight:${string}`
 export type EntityId = AirportEntityId | FlightEntityId | "controller"
 
 export const AirportEntityIdSchema = z.custom<AirportEntityId>(
-    v => typeof v === "string" && /^airport:(ALP|BRV|CHR)$/.test(v),
-    { message: "expected airport:<ALP|BRV|CHR>" },
+    v => typeof v === "string" && v.startsWith("airport:") && AirportIdSchema.safeParse(v.slice(8)).success,
+    { message: "expected airport:<known airport ID>" },
 )
 export const FlightEntityIdSchema = z.custom<FlightEntityId>(
-    v => typeof v === "string" && /^flight:F\d{3}$/.test(v),
+    v => typeof v === "string" && /^flight:F\d{3,5}$/.test(v),
     { message: "expected flight:F###" },
 )
 export const ControllerEntityIdSchema = z.literal("controller")
@@ -65,6 +65,8 @@ export const RunConfigSchema = z.strictObject({
     flightCount: z.number().int().min(FLIGHT_COUNT_MIN).max(FLIGHT_COUNT_MAX),
     seed: z.number().int().min(0).max(SEED_MAX),
     speed: SpeedSchema,
+    airportNetwork: z.enum(["US", "LEGACY"]).optional(),
+    continuousTraffic: z.boolean().optional(),
 })
 export type RunConfig = z.infer<typeof RunConfigSchema>
 
@@ -599,6 +601,7 @@ export const FlightStateSchema = z.strictObject({
     flightId: FlightIdSchema,
     callsign: z.string().min(1).max(32),
     originalDestination: AirportIdSchema,
+    originAirportId: AirportIdSchema.optional(),
     position: PointSchema,
     headingDeg: z.number().finite(),
     speedKnots: z.number().positive(),
@@ -757,6 +760,7 @@ export const PublicFlightSchema = z.object({
     priority: PrioritySchema,
     deadlineSimSec: SimSecSchema.nullable(),
     originalDestination: z.string(),
+    originAirportId: AirportIdSchema.optional(),
     activeAssignment: AssignmentSchema.nullable(),
     negotiationStage: z.string().nullable(),
     stateRevision: RevisionSchema,
@@ -848,6 +852,7 @@ export const SimulationStateSchema = z.strictObject({
     config: RunConfigSchema,
     phase: RunPhaseSchema,
     entities: z.array(EntityRegistrationSchema),
+    traffic: z.object({ nextSequence: z.number().int().positive(), pending: z.array(z.object({ retiredId: FlightEntityIdSchema, flight: FlightStateSchema })), capacityReached: z.boolean(), retiredIds: z.array(FlightEntityIdSchema).optional() }).optional(),
     simNowSec: SimSecSchema,
     tickCounter: z.number().int().nonnegative(),
     pendingTick: PendingTickSchema.nullable(),
