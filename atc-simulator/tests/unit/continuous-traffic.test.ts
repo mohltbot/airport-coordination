@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import * as sim from "../../actors/src/simulation.ts"
-import { createWorld } from "../../packages/domain/src/world.ts"
+import { createWorld, createTrafficFlight } from "../../packages/domain/src/world.ts"
 import { FlightStateSchema, SimulationStateSchema } from "../../packages/domain/src/contracts.ts"
 const runId = "6a1f0c2e-5b7d-4e8a-9c3f-2d4b6e8f0a1c"
 const config = { flightCount: 2, seed: 42, speed: 5 as const, airportNetwork: "US" as const, continuousTraffic: true }
@@ -210,4 +210,47 @@ test("membership reconciliation rechecks fencing after its awaited authority rea
     expect(await reconcileWorkerMembership(repo as any, runId, active, agents, registry, { connect: async () => { connects++ } } as any, () => current)).toBe(false)
     expect(connects).toBe(0)
     expect(active).toEqual(["flight:F001"])
+})
+
+
+test("both regional streams preserve featured arrivals, add outbound traffic, and vary new inbound legs", () => {
+    for (const focusRegion of ["BAY_AREA", "NYC"] as const) {
+        const cfg = { ...config, flightCount: 8, focusRegion, featuredFlightId: focusRegion === "BAY_AREA" ? "F001" : null }
+        const world = createWorld(cfg, { runId, operationId: "initial" })
+        expect(world.flights.filter(f => f.originAirportId)).toHaveLength(1)
+        expect(world.flights[0]!.originAirportId).toBeUndefined()
+        if (focusRegion === "BAY_AREA") expect(world.flights[0]!.position).toEqual({ x: 23.6, y: 87.4 })
+        const outbound = createTrafficFlight(cfg, { runId, operationId: "traffic" }, 9, 500)
+        const incoming = createTrafficFlight(cfg, { runId, operationId: "traffic" }, 10, 600)
+        const nextIncoming = createTrafficFlight(cfg, { runId, operationId: "traffic" }, 12, 700)
+        expect(outbound.originAirportId).toBe(focusRegion === "NYC" ? "JFK" : "SFO")
+        expect(incoming.originAirportId).toBeUndefined()
+        expect(incoming.originalDestination).toBe(focusRegion === "NYC" ? "JFK" : "SFO")
+        expect(incoming.position).not.toEqual(nextIncoming.position)
+        expect(incoming.lastAdvancedSimSec).toBe(600)
+        for (const flight of [outbound, incoming, nextIncoming]) FlightStateSchema.parse(flight)
+    }
+})
+
+test("regional traffic retains landings, paces single replacements, preserves featured history, and avoids closed origins", () => {
+    let { root, lease } = setup()
+    const run = root.runs[runId]!
+    run.config = { ...run.config, focusRegion: "NYC" }
+    let out = sim.prepareTraffic(root, lease, ["flight:F001", "flight:F002"], 2, ["EWR"])
+    expect(out.pending).toHaveLength(0) // Landing stays visible for 90 simulated seconds.
+    root = out.root; root.runs[runId]!.simNowSec = 91
+    out = sim.prepareTraffic(root, lease, ["flight:F001", "flight:F002"], 3, ["EWR"])
+    expect(out.pending).toHaveLength(1)
+    expect(out.pending[0]!.flight.originAirportId).toBe("EWR") // JFK/LGA unavailable.
+    root = sim.activateTraffic(out.root, lease, 4)
+    expect(sim.prepareTraffic(root, lease, ["flight:F002"], 5, []).pending).toHaveLength(0)
+    root.runs[runId]!.simNowSec = root.runs[runId]!.traffic!.nextSpawnSimSec!
+    out = sim.prepareTraffic(root, lease, ["flight:F002"], 6, [])
+    expect(out.pending).toHaveLength(1) // Incoming traffic needs no departure runway.
+    expect(out.pending[0]!.flight.originAirportId).toBeUndefined()
+    SimulationStateSchema.parse(out.root.runs[runId])
+    const bay = setup(); bay.root.runs[runId]!.config = { ...config, focusRegion: "BAY_AREA", featuredFlightId: "F001" }
+    const seen = sim.prepareTraffic(bay.root, bay.lease, ["flight:F001"], 2)
+    seen.root.runs[runId]!.simNowSec = 1000
+    expect(sim.prepareTraffic(seen.root, bay.lease, ["flight:F001"], 3).pending).toHaveLength(0)
 })

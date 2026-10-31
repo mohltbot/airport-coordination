@@ -1,6 +1,6 @@
 // Pure run-registry transitions for SimulationActor. Each returns a new root or throws `CODE: message`.
 import { headingDeg } from "@ghost-tower/domain/geometry"
-import { createTrafficFlight } from "@ghost-tower/domain/world"
+import { createTrafficFlight, regionalAirports } from "@ghost-tower/domain/world"
 import { airportsForNetwork, SCHEDULER_INTERVAL_MS, WORKER_LEASE_MS } from "@ghost-tower/domain/constants"
 import {
     RunConfigSchema,
@@ -288,26 +288,40 @@ export const MAX_TRAFFIC_LEGS = 10_000
 export function prepareTraffic(root: SimulationRootState, lease: WorkerLease, terminalIds: EntityId[], nowMs: number, usableOrigins?: AirportId[]): { root: SimulationRootState; pending: NonNullable<SimulationState["traffic"]>["pending"] } {
     const run = requireLease(root, lease, nowMs)
     if (!run.config.continuousTraffic || run.phase !== "RUNNING" || run.pendingTick) return { root, pending: [] }
-    const traffic = run.traffic ?? { nextSequence: run.config.flightCount + 1, pending: [], capacityReached: false }
+    let traffic = run.traffic ?? { nextSequence: run.config.flightCount + 1, pending: [], capacityReached: false }
     if (traffic.pending.length) return { root, pending: traffic.pending }
+    const regional = run.config.airportNetwork === "US" && !!run.config.focusRegion
+    if (regional) {
+        const terminalSeenSimSec = { ...traffic.terminalSeenSimSec }
+        for (const id of terminalIds) terminalSeenSimSec[id] ??= run.simNowSec
+        traffic = { ...traffic, terminalSeenSimSec }
+        root = withRun(root, { ...run, traffic })
+        if (run.simNowSec < (traffic.nextSpawnSimSec ?? 0)) return { root, pending: [] }
+    }
     let nextSequence = traffic.nextSequence
+    let prepared = false
     const pending = run.entities.filter(e => e.entityId.startsWith("flight:") && terminalIds.includes(e.entityId)).flatMap(e => {
         if (nextSequence > MAX_TRAFFIC_LEGS) return []
+        if (regional && (prepared || e.entityId === `flight:${run.config.featuredFlightId}` || run.simNowSec - traffic.terminalSeenSimSec![e.entityId]! < 90)) return []
         const sequence = nextSequence
         const flight = createTrafficFlight(run.config, { runId: run.runId, operationId: `traffic:${sequence}` }, sequence, run.simNowSec, run.liveTrafficSeed)
         const directory = airportsForNetwork(run.config.airportNetwork)
-        const usable = directory.filter(a => a.airportId !== flight.originalDestination && (usableOrigins === undefined || usableOrigins.includes(a.airportId)))
-        const origin = usable.find(a => a.airportId === flight.originAirportId) ?? usable[0]
-        if (!origin) return []
+        if (flight.originAirportId) {
+            const localIds = regional ? regionalAirports(run.config) : null
+            const usable = directory.filter(a => a.airportId !== flight.originalDestination && (!localIds || localIds.includes(a.airportId)) && (usableOrigins === undefined || usableOrigins.includes(a.airportId)))
+            const origin = usable.find(a => a.airportId === flight.originAirportId) ?? usable[0]
+            if (!origin) return []
+            flight.originAirportId = origin.airportId
+            flight.position = { ...origin.position }
+            const destination = directory.find(a => a.airportId === flight.originalDestination)!
+            flight.headingDeg = headingDeg(origin.position, destination.position)
+        }
         nextSequence++
-        flight.originAirportId = origin.airportId
-        flight.position = { ...origin.position }
-        const destination = directory.find(a => a.airportId === flight.originalDestination)!
-        flight.headingDeg = headingDeg(origin.position, destination.position)
+        prepared = true
         return [{ retiredId: e.entityId as `flight:${string}`, flight }]
     })
     if (!pending.length && nextSequence === traffic.nextSequence && run.traffic?.capacityReached === (nextSequence > MAX_TRAFFIC_LEGS)) return { root, pending: [] }
-    let next: SimulationState = { ...run, traffic: { retiredIds: traffic.retiredIds ?? [], nextSequence, pending, capacityReached: nextSequence > MAX_TRAFFIC_LEGS }, stateRevision: run.stateRevision + 1 }
+    let next: SimulationState = { ...run, traffic: { ...traffic, retiredIds: traffic.retiredIds ?? [], nextSequence, pending, capacityReached: nextSequence > MAX_TRAFFIC_LEGS }, stateRevision: run.stateRevision + 1 }
     if (next.traffic!.capacityReached && !traffic.capacityReached) next = logEvent(next, nowMs, "TRAFFIC_CAPACITY_REACHED", "Demo flight capacity reached (10,000 legs). Reset the run to continue departures.", null)
     return { root: withRun(root, next), pending }
 }
@@ -319,7 +333,7 @@ export function activateTraffic(root: SimulationRootState, lease: WorkerLease, n
         const entityId = replacements.get(e.entityId as `flight:${string}`)
         return entityId ? { entityId, handle: entityHandle(run.runId, entityId), role: entityRole(entityId) } : e
     })
-    return withRun(root, { ...run, entities, traffic: { ...run.traffic, retiredIds: [...(run.traffic.retiredIds ?? []), ...run.traffic.pending.map(p => p.retiredId)], pending: [] }, stateRevision: run.stateRevision + 1 })
+    return withRun(root, { ...run, entities, traffic: { ...run.traffic, nextSpawnSimSec: run.simNowSec + 60 + (run.traffic.nextSequence * 37 % 61), retiredIds: [...(run.traffic.retiredIds ?? []), ...run.traffic.pending.map(p => p.retiredId)], pending: [] }, stateRevision: run.stateRevision + 1 })
 }
 
 // Abandon only the reserved identities, never reuse them. Old active entities remain

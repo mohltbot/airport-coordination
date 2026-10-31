@@ -106,11 +106,12 @@ describe("NYC placement", () => {
         })
     })
 
-    test("continuous traffic and other focus regions keep their worlds; live traffic lends callsigns only", () => {
+    test("continuous traffic retains regional placement; live traffic lends callsigns only", () => {
         const plain = createWorld({ flightCount: 8, seed: 20261031, speed: 10, airportNetwork: "US" }, { runId, operationId: "op" })
         expect(plain.flights.map(f => f.originalDestination)).not.toEqual(createWorld(nycConfig(), { runId, operationId: "op" }).flights.map(f => f.originalDestination))
         const continuous = createWorld(nycConfig({ continuousTraffic: true }), { runId, operationId: "op" })
-        expect(continuous).toEqual(createWorld({ ...nycConfig(), focusRegion: null, continuousTraffic: true }, { runId, operationId: "op" }))
+        expect(continuous.flights.slice(0, -1)).toEqual(createWorld(nycConfig(), { runId, operationId: "op" }).flights.slice(0, -1))
+        expect(continuous.flights.at(-1)!.originAirportId).toBe("LGA")
         const seed = { source: "OpenSky Network" as const, fetchedAtWallMs: 1, flights: [{ callsign: "DAL123", icao24: "abc123", lat: 41.9, lon: -87.9, headingDeg: 90, groundSpeedKt: 400, altitudeFt: 30000, destinationAirportId: "ORD" as const }] }
         const lent = applyLiveTraffic(nycConfig(), plain.flights, seed)
         expect(lent[0]!.callsign).toBe("DAL123")

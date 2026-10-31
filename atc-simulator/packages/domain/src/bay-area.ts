@@ -76,7 +76,7 @@ export function placeBayAreaFlights(config: RunConfig, flights: readonly FlightS
 // Run-level options applied after createWorld: Bay Area placement and the emergency candidate mode.
 export function applyDemoConfig(config: RunConfig, world: InitialWorld): InitialWorld {
     let flights = world.flights
-    if (config.focusRegion === "BAY_AREA" && config.airportNetwork === "US" && !config.continuousTraffic)
+    if (config.focusRegion === "BAY_AREA" && config.airportNetwork === "US")
         flights = placeBayAreaFlights(config, flights)
     if (config.emergencyCandidateMode === "SEQUENTIAL") flights = flights.map(f => ({ ...f, emergencyCandidateMode: "SEQUENTIAL" as const }))
     const smoke = config.smokeDeadlineSec

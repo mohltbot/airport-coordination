@@ -911,7 +911,7 @@ export const SimulationStateSchema = z.strictObject({
     liveTrafficSeed: LiveTrafficSeedSchema.nullable().optional(),
     phase: RunPhaseSchema,
     entities: z.array(EntityRegistrationSchema),
-    traffic: z.object({ nextSequence: z.number().int().positive(), pending: z.array(z.object({ retiredId: FlightEntityIdSchema, flight: FlightStateSchema })), capacityReached: z.boolean(), retiredIds: z.array(FlightEntityIdSchema).optional() }).optional(),
+    traffic: z.object({ nextSpawnSimSec: z.number().nonnegative().optional(), terminalSeenSimSec: z.record(z.string(), z.number()).optional(), nextSequence: z.number().int().positive(), pending: z.array(z.object({ retiredId: FlightEntityIdSchema, flight: FlightStateSchema })), capacityReached: z.boolean(), retiredIds: z.array(FlightEntityIdSchema).optional() }).optional(),
     simNowSec: SimSecSchema,
     tickCounter: z.number().int().nonnegative(),
     pendingTick: PendingTickSchema.nullable(),

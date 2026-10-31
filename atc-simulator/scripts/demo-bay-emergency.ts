@@ -13,6 +13,7 @@
 // Flags: --speed 1|5|10 (5)  --flights N (10)  --seed N  --featured F001  --smoke-deadline SEC
 //        --settle-sec N (15)  --timeout-sec N (900)  --no-reset
 //        --smoke-on-enter     after the settle (MRY already closed), wait for Enter before SMOKE
+//        --finite             disable ongoing arrivals/departures
 //        --no-incidents       stop after resume with zero incidents, for phone-driven runs
 // The operator capability is minted locally and never printed.
 import { CRUISE_SPEED_KNOTS, DEFAULT_SEED, SMOKE_DEADLINE_SEC } from "../packages/domain/src/constants.ts"
@@ -109,6 +110,7 @@ async function main() {
         speed,
         airportNetwork: "US",
         focusRegion: "BAY_AREA",
+        continuousTraffic: !argv.includes("--finite"),
         emergencyCandidateMode: "SEQUENTIAL",
         featuredFlightId: featured,
         ...(smokeDeadlineArg ? { smokeDeadlineSec: Number(smokeDeadlineArg) } : {}),

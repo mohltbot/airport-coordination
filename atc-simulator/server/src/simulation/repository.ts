@@ -83,6 +83,7 @@ export function workerRepositoryFrom(generated: Generated, simulationActorId = S
             await connect(ids)
             // Hosted registration can take seconds; check the selected departure runway again.
             for (const item of pending) {
+                if (!item.flight.originAirportId) continue // An inbound aircraft is already airborne.
                 const origin = await actors.AirportActor!.get(entityActorId(run.runId, airportEntityId(item.flight.originAirportId!))).read!() as AirportState
                 if (origin.restrictions.arrivalsClosed || !origin.runways.some(r => !origin.restrictions.closedRunways.includes(r.runwayId) && (r.occupiedUntilSimSec === null || r.occupiedUntilSimSec <= run.simNowSec))) {
                     await sim.cancelTraffic(lease)
