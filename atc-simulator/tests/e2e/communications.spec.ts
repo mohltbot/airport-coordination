@@ -23,7 +23,7 @@ test('communications scope, thread grouping, counterpart filtering and full rece
   const next = structuredClone(snapshot); next.projectionVersion++;
   await h.emit('snapshot', next);
   await expect(page.getByLabel('Conversation with')).toHaveValue(other.entityId);
-  await page.getByRole('tab', { name: 'State', exact: true }).click();
+  await page.getByRole('tab', { name: 'Controls', exact: true }).click();
   await page.locator('.fleet-flight').filter({ hasText: snapshot.flights[1]!.callsign }).click();
   await expect(page.getByRole('tab', { name: 'Communications', exact: true })).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByText('Awaiting activity', { exact: true })).toBeVisible();
@@ -32,9 +32,11 @@ test('communications scope, thread grouping, counterpart filtering and full rece
 test('inspector tabs support keyboard navigation and preserve operational state', async ({ page }) => {
   const snapshot = fixture(); const h = await harness(page, bootstrap(snapshot, 'VIEWER')); await h.open('/');
   await page.locator('.fleet-flight').filter({ hasText: 'GHOST 001' }).click();
+  await expect(page.getByRole('tab', { name: 'State', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'Flight state' })).toContainText('Fuel remaining');
   await page.getByRole('tab', { name: 'Communications', exact: true }).focus();
   await page.keyboard.press('ArrowRight');
-  await expect(page.getByRole('tab', { name: 'State', exact: true })).toBeFocused();
+  await expect(page.getByRole('tab', { name: 'Controls', exact: true })).toBeFocused();
   await expect(page.getByText('Fuel remaining', { exact: true })).toBeVisible();
   await page.keyboard.press('End');
   await expect(page.getByRole('tab', { name: 'Controls', exact: true })).toBeFocused();
