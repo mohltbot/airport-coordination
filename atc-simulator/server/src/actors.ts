@@ -113,6 +113,9 @@ export class ActorRepository {
 const PUBLISHED_FRESH_MS = 4_000
 const ACTOR_PROBE_MS = 5_000
 
+/** The domain projection copies three config fields; the browser also needs airportNetwork and continuousTraffic. */
+const withFullConfig = (run: SimulationState, snapshot: PublicSnapshot): PublicSnapshot => ({ ...snapshot, config: { ...run.config } })
+
 const LOCKED: ReadonlySet<RunPhase> = new Set(["STARTING", "RUNNING", "PAUSED"])
 const PHASE_FOR: Record<LifecycleAction, RunPhase> = { start: "STARTING", pause: "PAUSED", resume: "RUNNING" }
 
@@ -239,7 +242,7 @@ export class ActorBackend implements SimulationBackend {
         if (run.phase === "CONFIGURING") {
             // Nothing is initialized before Start; show the deterministic seeded world it will create.
             const world = createWorld(run.config, { runId: run.runId, operationId: `init-${run.runId}` })
-            return buildPublicSnapshot({
+            return withFullConfig(run, buildPublicSnapshot({
                 run,
                 airports: world.airports,
                 flights: world.flights,
@@ -247,7 +250,7 @@ export class ActorBackend implements SimulationBackend {
                 projectionVersion: run.projectionVersion,
                 health,
                 agentMode: this.config.agentMode,
-            })
+            }))
         }
         await Promise.all(
             run.entities.map(async e => {
@@ -261,7 +264,7 @@ export class ActorBackend implements SimulationBackend {
                 }
             }),
         )
-        return buildPublicSnapshot({
+        return withFullConfig(run, buildPublicSnapshot({
             run,
             airports,
             flights,
@@ -269,7 +272,7 @@ export class ActorBackend implements SimulationBackend {
             projectionVersion: run.projectionVersion,
             health,
             agentMode: this.config.agentMode,
-        })
+        }))
     }
 
     /**

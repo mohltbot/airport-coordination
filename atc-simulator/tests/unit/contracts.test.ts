@@ -91,9 +91,9 @@ describe("envelopes", () => {
 
 describe("identity helpers", () => {
     test("handles and actor IDs", () => {
-        expect(entityHandle(runId, "controller")).toBe("ghost-6a1f0c2e-controller")
-        expect(entityHandle(runId, "airport:ALP")).toBe("ghost-6a1f0c2e-atc-alp")
-        expect(entityHandle(runId, "flight:F001")).toBe("ghost-6a1f0c2e-flight-f001")
+        expect(entityHandle(runId, "controller")).toBe("ghost-controller")
+        expect(entityHandle(runId, "airport:ALP")).toBe("ghost-atc-alp")
+        expect(entityHandle(runId, "flight:F001")).toBe("ghost-flight-f001")
         expect(entityActorId(runId, "airport:ALP")).toBe(`${runId}.airport.ALP`)
         expect(entityActorId(runId, "flight:F012")).toBe(`${runId}.flight.F012`)
     })
@@ -105,8 +105,8 @@ describe("timing profiles", () => {
         expect(RELAY_TIMING.LOCAL.offerTtlMs).toBe(20000)
         expect(RELAY_TIMING.HOSTED.replyCollectionWindowMs).toBe(60000)
         expect(RELAY_TIMING.HOSTED.offerTtlMs).toBe(120000)
-        expect(minSlotLeadSimSec(1, RELAY_TIMING.HOSTED)).toBe(60)
-        expect(minSlotLeadSimSec(5, RELAY_TIMING.HOSTED)).toBe(225)
+        expect(minSlotLeadSimSec(1, RELAY_TIMING.HOSTED)).toBe(90)
+        expect(minSlotLeadSimSec(5, RELAY_TIMING.HOSTED)).toBe(450)
         expect(minSlotLeadSimSec(10, RELAY_TIMING.LOCAL)).toBe(60)
     })
     test("env overrides", () => {
